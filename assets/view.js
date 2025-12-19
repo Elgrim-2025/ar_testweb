@@ -278,4 +278,322 @@ class ARSimpleMap
     }
 }
 
-export { ARCamView, ARCamIMUView, ARSimpleView, ARSimpleMap }
+class ARCamMarkerView
+{
+    constructor( container, width, height )
+    {
+        this.applyPose = AlvaARConnectorTHREE.Initialize( THREE );
+
+        this.renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true, preserveDrawingBuffer: true } );
+        this.renderer.setClearColor( 0, 0 );
+        this.renderer.setSize( width, height );
+        this.renderer.setPixelRatio( window.devicePixelRatio );
+
+        this.camera = new THREE.PerspectiveCamera( 75, width / height, 0.1, 1000 );
+        this.camera.rotation.reorder( 'YXZ' );
+        this.camera.updateProjectionMatrix();
+
+        this.raycaster = new THREE.Raycaster();
+
+        this.ground = new THREE.Mesh(
+            new THREE.CircleGeometry( 1000, 64 ),
+            new THREE.MeshBasicMaterial( {
+                color: 0xffffff,
+                transparent: true,
+                depthTest: true,
+                opacity: 0.0,
+                side: THREE.DoubleSide
+            } )
+        );
+        this.ground.rotation.x = Math.PI / 2;
+        this.ground.position.y = -10;
+
+        this.marker = this.createMarker();
+
+        this.currentObject = null;
+
+        this.scene = new THREE.Scene();
+        this.scene.add( new THREE.AmbientLight( 0x808080 ) );
+        this.scene.add( new THREE.HemisphereLight( 0x404040, 0xf0f0f0, 1 ) );
+        this.scene.add( this.ground );
+        this.scene.add( this.marker );
+        this.scene.add( this.camera );
+
+        container.appendChild( this.renderer.domElement );
+
+        const render = () =>
+        {
+            requestAnimationFrame( render.bind( this ) );
+            this.renderer.render( this.scene, this.camera );
+        };
+
+        render();
+    }
+
+    createMarker()
+    {
+        const markerGroup = new THREE.Group();
+
+        const circle = new THREE.Mesh(
+            new THREE.CircleGeometry( 0.3, 32 ),
+            new THREE.MeshBasicMaterial( {
+                color: 0x00ff88,
+                transparent: true,
+                opacity: 0.4,
+                side: THREE.DoubleSide,
+                depthTest: false
+            } )
+        );
+        circle.rotation.x = -Math.PI / 2;
+
+        const crossPoints = [
+            -0.25, 0, 0,  0.25, 0, 0,
+            0, 0, -0.25,  0, 0, 0.25
+        ];
+        const crossGeometry = new THREE.BufferGeometry();
+        crossGeometry.setAttribute(
+            'position',
+            new THREE.Float32BufferAttribute( crossPoints, 3 )
+        );
+        const cross = new THREE.LineSegments(
+            crossGeometry,
+            new THREE.LineBasicMaterial( {
+                color: 0xffffff,
+                depthTest: false
+            } )
+        );
+
+        markerGroup.add( circle );
+        markerGroup.add( cross );
+        markerGroup.visible = false;
+
+        return markerGroup;
+    }
+
+    updateCameraPose( pose )
+    {
+        this.applyPose( pose, this.camera.quaternion, this.camera.position );
+
+        this.ground.position.x = this.camera.position.x;
+        this.ground.position.z = this.camera.position.z;
+
+        this.updateMarkerPosition();
+
+        this.scene.children.forEach( obj =>
+        {
+            if( obj !== this.marker && obj !== this.ground )
+            {
+                obj.visible = true;
+            }
+        } );
+    }
+
+    updateMarkerPosition()
+    {
+        const screenCenter = new THREE.Vector2( 0, 0 );
+
+        this.raycaster.setFromCamera( screenCenter, this.camera );
+
+        const intersections = this.raycaster.intersectObjects( [this.ground] );
+
+        if( intersections.length > 0 )
+        {
+            const point = intersections[0].point;
+            this.marker.position.set( point.x, point.y, point.z );
+            this.marker.visible = true;
+        }
+        else
+        {
+            this.marker.visible = false;
+        }
+    }
+
+    placeObjectAtMarker()
+    {
+        if( !this.marker.visible )
+        {
+            console.warn( '마커가 표시되지 않아 배치할 수 없습니다.' );
+            return;
+        }
+
+        if( this.currentObject )
+        {
+            this.scene.remove( this.currentObject );
+        }
+
+        const object = new THREE.Mesh(
+            new THREE.IcosahedronGeometry( 1, 0 ),
+            new THREE.MeshNormalMaterial( { flatShading: true } )
+        );
+
+        object.scale.set( 0.5, 0.5, 0.5 );
+        object.position.copy( this.marker.position );
+
+        this.scene.add( object );
+        this.currentObject = object;
+    }
+
+    lostCamera()
+    {
+        this.marker.visible = false;
+        if( this.currentObject )
+        {
+            this.currentObject.visible = false;
+        }
+    }
+}
+
+class ARCamMarkerIMUView
+{
+    constructor( container, width, height )
+    {
+        this.applyPose = AlvaARConnectorTHREE.Initialize( THREE );
+
+        this.renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true, preserveDrawingBuffer: true } );
+        this.renderer.setClearColor( 0, 0 );
+        this.renderer.setSize( width, height );
+        this.renderer.setPixelRatio( window.devicePixelRatio );
+
+        this.camera = new THREE.PerspectiveCamera( 60, width / height, 0.01, 1000 );
+
+        this.raycaster = new THREE.Raycaster();
+
+        this.ground = new THREE.Mesh(
+            new THREE.CircleGeometry( 1000, 64 ),
+            new THREE.MeshBasicMaterial( {
+                color: 0xffffff,
+                transparent: true,
+                depthTest: true,
+                opacity: 0.0,
+                side: THREE.DoubleSide
+            } )
+        );
+        this.ground.rotation.x = Math.PI / 2;
+        this.ground.position.y = -10;
+
+        this.marker = this.createMarker();
+
+        this.currentObject = null;
+
+        this.scene = new THREE.Scene();
+        this.scene.add( new THREE.AmbientLight( 0x808080 ) );
+        this.scene.add( new THREE.HemisphereLight( 0x404040, 0xf0f0f0, 1 ) );
+        this.scene.add( this.ground );
+        this.scene.add( this.marker );
+        this.scene.add( this.camera );
+
+        container.appendChild( this.renderer.domElement );
+
+        const render = () =>
+        {
+            requestAnimationFrame( render.bind( this ) );
+            this.renderer.render( this.scene, this.camera );
+        };
+
+        render();
+    }
+
+    createMarker()
+    {
+        const markerGroup = new THREE.Group();
+
+        const circle = new THREE.Mesh(
+            new THREE.CircleGeometry( 0.3, 32 ),
+            new THREE.MeshBasicMaterial( {
+                color: 0x00ff88,
+                transparent: true,
+                opacity: 0.4,
+                side: THREE.DoubleSide,
+                depthTest: false
+            } )
+        );
+        circle.rotation.x = -Math.PI / 2;
+
+        const crossPoints = [
+            -0.25, 0, 0,  0.25, 0, 0,
+            0, 0, -0.25,  0, 0, 0.25
+        ];
+        const crossGeometry = new THREE.BufferGeometry();
+        crossGeometry.setAttribute(
+            'position',
+            new THREE.Float32BufferAttribute( crossPoints, 3 )
+        );
+        const cross = new THREE.LineSegments(
+            crossGeometry,
+            new THREE.LineBasicMaterial( {
+                color: 0xffffff,
+                depthTest: false
+            } )
+        );
+
+        markerGroup.add( circle );
+        markerGroup.add( cross );
+        markerGroup.visible = false;
+
+        return markerGroup;
+    }
+
+    updateCameraPose( pose )
+    {
+        this.applyPose( pose, this.camera.quaternion, this.camera.position );
+
+        this.ground.position.x = this.camera.position.x;
+        this.ground.position.z = this.camera.position.z;
+
+        this.updateMarkerPosition();
+
+        this.scene.children.forEach( obj => obj.visible = true );
+    }
+
+    updateMarkerPosition()
+    {
+        const screenCenter = new THREE.Vector2( 0, 0 );
+
+        this.raycaster.setFromCamera( screenCenter, this.camera );
+
+        const intersections = this.raycaster.intersectObjects( [this.ground] );
+
+        if( intersections.length > 0 )
+        {
+            const point = intersections[0].point;
+            this.marker.position.set( point.x, point.y, point.z );
+            this.marker.visible = true;
+        }
+        else
+        {
+            this.marker.visible = false;
+        }
+    }
+
+    placeObjectAtMarker()
+    {
+        if( !this.marker.visible )
+        {
+            console.warn( '마커가 표시되지 않아 배치할 수 없습니다.' );
+            return;
+        }
+
+        if( this.currentObject )
+        {
+            this.scene.remove( this.currentObject );
+        }
+
+        const object = new THREE.Mesh(
+            new THREE.IcosahedronGeometry( 1, 0 ),
+            new THREE.MeshNormalMaterial( { flatShading: true } )
+        );
+
+        object.scale.set( 0.5, 0.5, 0.5 );
+        object.position.copy( this.marker.position );
+
+        this.scene.add( object );
+        this.currentObject = object;
+    }
+
+    lostCamera()
+    {
+        this.scene.children.forEach( obj => obj.visible = false );
+    }
+}
+
+export { ARCamView, ARCamIMUView, ARSimpleView, ARSimpleMap, ARCamMarkerView, ARCamMarkerIMUView }
