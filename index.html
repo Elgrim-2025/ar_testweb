@@ -135,6 +135,36 @@
                 content: none;
             }
         }
+
+        /* Screenshot button UI */
+        #ui-layer {
+            position: absolute;
+            bottom: 30px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #capture-btn {
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            background-color: #ff4757;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+            pointer-events: auto;
+        }
+
+        #capture-btn:active {
+            transform: scale(0.95);
+        }
     </style>
 </head>
 <body>
@@ -142,6 +172,9 @@
 <div id="overlay">
     <button id="start_button">Start</button>
     <div id="splash"></div>
+</div>
+<div id="ui-layer">
+    <button id="capture-btn">📸 스크린샷 찍기</button>
 </div>
 <script type="module">
     import { Stats } from "./assets/stats.js";
@@ -195,6 +228,39 @@
 
             document.body.appendChild( Stats.el );
             document.body.addEventListener( "click", () => alva.reset(), false );
+
+            // Screenshot capture function
+            function takeScreenshot() {
+                const captureCanvas = document.createElement('canvas');
+                const width = $container.clientWidth;
+                const height = $container.clientHeight;
+
+                captureCanvas.width = width;
+                captureCanvas.height = height;
+                const captureCtx = captureCanvas.getContext('2d');
+
+                // Draw the main canvas (camera feed + AR points)
+                captureCtx.drawImage($canvas, 0, 0, width, height);
+
+                // Draw the 3D view canvas if it exists
+                const viewCanvas = $view.querySelector('canvas');
+                if (viewCanvas) {
+                    captureCtx.drawImage(viewCanvas, 0, 0, width, height);
+                }
+
+                // Download the image
+                const dataURL = captureCanvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.download = `ar-capture-${Date.now()}.png`;
+                link.href = dataURL;
+                link.click();
+            }
+
+            // Connect screenshot button
+            const $captureBtn = document.getElementById('capture-btn');
+            if ($captureBtn) {
+                $captureBtn.addEventListener('click', takeScreenshot);
+            }
 
             onFrame( () =>
             {

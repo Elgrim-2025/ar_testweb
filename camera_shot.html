@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Screenshot Demo (Vanilla JS)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* 스크롤 방지 */
+            background-color: #000;
+        }
+
+        /* 컨테이너: 비디오와 3D 캔버스를 겹치기 위함 */
+        #ar-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* 1. 카메라 비디오 (배경) */
+        #camera-feed {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* 화면 꽉 채우기 */
+            z-index: 1;
+        }
+
+        /* 2. 3D 캔버스 (전경) */
+        #three-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none; /* 클릭 이벤트를 투과시켜 필요시 비디오 조작 가능하게 함 */
+        }
+
+        /* 3. 캡처 버튼 UI */
+        #ui-layer {
+            position: absolute;
+            bottom: 30px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            z-index: 3;
+            pointer-events: auto;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            background-color: #ff4757;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<div id="ar-container">
+    <video id="camera-feed" autoplay playsinline muted></video>
+
+    <canvas id="three-canvas"></canvas>
+
+    <div id="ui-layer">
+        <button id="capture-btn">📸 스크린샷 찍기</button>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // 1. 변수 선언 및 초기화
+    // ==========================================
+    const video = document.getElementById('camera-feed');
+    const canvas3D = document.getElementById('three-canvas');
+    const captureBtn = document.getElementById('capture-btn');
+    let renderer, scene, camera, cube;
+
+    // ==========================================
+    // 2. 카메라 실행 (Camera Setup)
+    // ==========================================
+    async function startCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: 'environment', // 후면 카메라 우선
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                },
+                audio: false
+            });
+            video.srcObject = stream;
+        } catch (err) {
+            alert("카메라 권한이 필요합니다. HTTPS나 localhost에서 실행해주세요.");
+            console.error("Camera Error:", err);
+        }
+    }
+
+    // ==========================================
+    // 3. Three.js 3D 환경 설정 (WebGL Setup)
+    // ==========================================
+    function initThreeJS() {
+        // Scene 생성
+        scene = new THREE.Scene();
+
+        // Camera 생성
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 5;
+
+        // Renderer 생성
+        renderer = new THREE.WebGLRenderer({
+            canvas: canvas3D,
+            alpha: true, // [중요] 배경을 투명하게 해서 비디오가 보이게 함
+            preserveDrawingBuffer: true // [핵심] 캡처를 위해 버퍼를 지우지 않음
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio); // 고해상도 처리
+
+        // 예제 3D 물체 (회전하는 큐브) 추가
+        const geometry = new THREE.BoxGeometry();
+        const material = new THREE.MeshNormalMaterial({ wireframe: false }); // 색상이 예쁜 재질
+        cube = new THREE.Mesh(geometry, material);
+        scene.add(cube);
+
+        // 조명 추가
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(0, 1, 1);
+        scene.add(light);
+
+        animate();
+    }
+
+    // 렌더링 루프
+    function animate() {
+        requestAnimationFrame(animate);
+
+        // 큐브 회전 애니메이션
+        if (cube) {
+            cube.rotation.x += 0.01;
+            cube.rotation.y += 0.01;
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    // 윈도우 리사이즈 대응
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ==========================================
+    // 4. 스크린샷 캡처 및 합성 로직 (Screenshot Logic)
+    // ==========================================
+    function takeScreenshot() {
+        // A. 임시 캔버스 생성 (현재 화면 해상도 기준)
+        const captureCanvas = document.createElement('canvas');
+        const width = window.innerWidth * window.devicePixelRatio;
+        const height = window.innerHeight * window.devicePixelRatio;
+
+        captureCanvas.width = width;
+        captureCanvas.height = height;
+        const ctx = captureCanvas.getContext('2d');
+
+        // B. 비디오 그리기 (object-fit: cover 효과 구현)
+        // 비디오의 실제 크기와 화면의 비율이 다르므로 계산이 필요함
+        drawVideoCover(ctx, video, width, height);
+
+        // C. WebGL Canvas 그리기
+        // 이미 화면에 렌더링된 3D 캔버스를 그대로 위에 덮어씀
+        ctx.drawImage(canvas3D, 0, 0, width, height);
+
+        // D. 다운로드 처리
+        const dataURL = captureCanvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `ar-capture-${Date.now()}.png`;
+        link.href = dataURL;
+        link.click();
+    }
+
+    // [보조 함수] 비디오를 캔버스에 꽉 차게(Cover) 그리는 계산 로직
+    function drawVideoCover(ctx, videoEl, targetW, targetH) {
+        const vidW = videoEl.videoWidth;
+        const vidH = videoEl.videoHeight;
+
+        const targetRatio = targetW / targetH;
+        const vidRatio = vidW / vidH;
+
+        let sx, sy, sW, sH; // 소스(비디오)에서 잘라낼 영역
+
+        if (vidRatio > targetRatio) {
+            // 비디오가 더 납작함 -> 양옆을 자름
+            sH = vidH;
+            sW = vidH * targetRatio;
+            sx = (vidW - sW) / 2;
+            sy = 0;
+        } else {
+            // 비디오가 더 길쭉함 -> 위아래를 자름
+            sW = vidW;
+            sH = vidW / targetRatio;
+            sx = 0;
+            sy = (vidH - sH) / 2;
+        }
+
+        // 캔버스에 그리기 (좌우반전이 필요하다면 save/scale/restore 추가)
+        ctx.drawImage(videoEl, sx, sy, sW, sH, 0, 0, targetW, targetH);
+    }
+
+    // ==========================================
+    // 5. 실행 시작
+    // ==========================================
+    initThreeJS();
+    startCamera();
+
+    captureBtn.addEventListener('click', takeScreenshot);
+
+</script>
+</body>
+</html>
