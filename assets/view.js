@@ -8,7 +8,7 @@ class ARCamView
     {
         this.applyPose = AlvaARConnectorTHREE.Initialize( THREE );
 
-        this.renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true } );
+        this.renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true, preserveDrawingBuffer: true } );
         this.renderer.setClearColor( 0, 0 );
         this.renderer.setSize( width, height );
         this.renderer.setPixelRatio( window.devicePixelRatio );
@@ -59,7 +59,7 @@ class ARCamIMUView
     {
         this.applyPose = AlvaARConnectorTHREE.Initialize( THREE );
 
-        this.renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true } );
+        this.renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true, preserveDrawingBuffer: true } );
         this.renderer.setClearColor( 0, 0 );
         this.renderer.setSize( width, height );
         this.renderer.setPixelRatio( window.devicePixelRatio );
@@ -154,7 +154,7 @@ class ARSimpleView
     {
         this.applyPose = AlvaARConnectorTHREE.Initialize( THREE );
 
-        this.renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true } );
+        this.renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true, preserveDrawingBuffer: true } );
         this.renderer.setClearColor( 0, 0 );
         this.renderer.setSize( width, height );
         this.renderer.setPixelRatio( window.devicePixelRatio );
