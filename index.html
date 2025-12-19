@@ -230,7 +230,10 @@
             document.body.addEventListener( "click", () => alva.reset(), false );
 
             // Screenshot capture function
-            function takeScreenshot() {
+            function takeScreenshot(event) {
+                // Prevent event from bubbling to body (which triggers alva.reset())
+                event.stopPropagation();
+
                 const captureCanvas = document.createElement('canvas');
                 const width = $container.clientWidth;
                 const height = $container.clientHeight;
