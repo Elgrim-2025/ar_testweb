@@ -3,73 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR Video Texture Demo</title>
+    <title>AR Chromakey</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            background-color: #000;
-        }
-        #ar-container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-        }
+        body { margin: 0; overflow: hidden; background: #000; }
+        #ar-container { position: relative; width: 100vw; height: 100vh; }
         #camera-feed {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            z-index: 1;
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: cover; z-index: 1;
         }
         #three-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 2;
-            pointer-events: none;
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 2; pointer-events: none;
         }
         #ui-layer {
-            position: absolute;
-            bottom: 30px;
-            left: 0;
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            z-index: 3;
-            pointer-events: auto;
+            position: absolute; bottom: 30px; left: 0;
+            width: 100%; display: flex;
+            justify-content: center; gap: 15px;
+            z-index: 3; pointer-events: auto;
         }
         button {
-            padding: 15px 30px;
-            font-size: 18px;
-            font-weight: bold;
-            color: white;
-            background-color: #ff4757;
-            border: none;
-            border-radius: 50px;
-            cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            padding: 15px 30px; font-size: 18px; font-weight: bold;
+            color: #fff; border: none; border-radius: 50px;
+            cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             transition: transform 0.1s;
         }
         button:active { transform: scale(0.95); }
-        #play-btn { background-color: #2ed573; }
-        #status {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: #fff;
-            font-family: sans-serif;
-            font-size: 14px;
-            z-index: 3;
-            background: rgba(0,0,0,0.5);
-            padding: 10px;
-            border-radius: 8px;
-        }
+        #play-btn { background: linear-gradient(135deg, #2ed573, #1e90ff); }
+        #capture-btn { background: linear-gradient(135deg, #ff4757, #ff6b81); }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
@@ -78,29 +40,72 @@
 <div id="ar-container">
     <video id="camera-feed" autoplay playsinline muted></video>
     <canvas id="three-canvas"></canvas>
-    <div id="status">상태: 대기 중</div>
     <div id="ui-layer">
-        <button id="play-btn">▶️ 이펙트 재생</button>
-        <button id="capture-btn">📸 스크린샷</button>
+        <button id="play-btn">▶️ 재생</button>
+        <button id="capture-btn">📸 캡처</button>
     </div>
 </div>
 
 <script>
     // ==========================================
-    // 1. 변수 선언
+    // 1. 셰이더 코드 (8th Wall 참조)
+    // ==========================================
+    const VERTEX_SHADER = `
+varying vec2 vUv;
+
+void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+    const FRAGMENT_SHADER = `
+uniform sampler2D tex;
+uniform vec3 keyColor;
+uniform float similarity;
+uniform float smoothness;
+uniform float spill;
+
+varying vec2 vUv;
+
+vec2 RGBtoUV(vec3 rgb) {
+    return vec2(
+        rgb.r * -0.169 + rgb.g * -0.331 + rgb.b *  0.5   + 0.5,
+        rgb.r *  0.5   + rgb.g * -0.419 + rgb.b * -0.081 + 0.5
+    );
+}
+
+vec4 ProcessChromaKey(vec2 texCoord) {
+    vec4 rgba = texture2D(tex, texCoord);
+    float chromaDist = distance(RGBtoUV(rgba.rgb), RGBtoUV(keyColor));
+
+    float baseMask = chromaDist - similarity;
+    float fullMask = pow(clamp(baseMask / smoothness, 0.0, 1.0), 1.5);
+    rgba.a = fullMask;
+
+    float spillVal = pow(clamp(baseMask / spill, 0.0, 1.0), 1.5);
+    float desat = clamp(rgba.r * 0.2126 + rgba.g * 0.7152 + rgba.b * 0.0722, 0.0, 1.0);
+    rgba.rgb = mix(vec3(desat), rgba.rgb, spillVal);
+
+    return rgba;
+}
+
+void main(void) {
+    gl_FragColor = ProcessChromaKey(vUv);
+}
+`;
+
+    // ==========================================
+    // 2. 전역 변수
     // ==========================================
     const cameraVideo = document.getElementById('camera-feed');
     const canvas3D = document.getElementById('three-canvas');
-    const captureBtn = document.getElementById('capture-btn');
-    const playBtn = document.getElementById('play-btn');
-    const statusEl = document.getElementById('status');
 
     let renderer, scene, camera;
-    // [변경] cube 대신 videoPlane 사용
-    let videoPlane, effectVideo, videoTexture;
+    let chromakeyPlane, effectVideo, videoTexture, chromakeyMaterial;
 
     // ==========================================
-    // 2. 카메라 실행
+    // 3. 카메라 실행
     // ==========================================
     async function startCamera() {
         try {
@@ -109,138 +114,115 @@
                 audio: false
             });
             cameraVideo.srcObject = stream;
-            updateStatus('카메라 준비 완료');
         } catch (err) {
-            updateStatus('카메라 오류: ' + err.message);
-            console.error("Camera Error:", err);
+            console.error('Camera Error:', err);
         }
     }
 
     // ==========================================
-    // 3. [핵심] 이펙트 비디오 엘리먼트 동적 생성
+    // 4. 크로마키 비디오 생성
     // ==========================================
-    function createEffectVideo() {
-        // HTML에 직접 넣지 않고 JS로 동적 생성
+    function createChromakeyVideo() {
         effectVideo = document.createElement('video');
-
-        // [필수] CORS 설정 (외부 리소스 사용 시)
         effectVideo.crossOrigin = 'anonymous';
-
-        // [필수] 브라우저 자동재생 정책 대응
         effectVideo.muted = true;
         effectVideo.loop = true;
-        effectVideo.playsInline = true;
+        effectVideo.autoplay = false;
+        effectVideo.setAttribute('playsinline', '');
+        effectVideo.src = './assets/greenscreen.mp4';
 
-        // 비디오 경로 설정 (placeholder)
-        effectVideo.src = './custom.webm';
-
-        // 비디오 로드 완료 이벤트
-        effectVideo.addEventListener('loadeddata', () => {
-            updateStatus('이펙트 비디오 로드 완료');
-            // 텍스처 업데이트 필요 알림
-            if (videoTexture) videoTexture.needsUpdate = true;
-        });
-
-        effectVideo.addEventListener('error', (e) => {
-            updateStatus('비디오 로드 실패 - 데모 패턴 표시');
-            console.warn('Video load error, using fallback');
-            createFallbackTexture();
-        });
-
-        // 비디오 로드 시작
+        effectVideo.addEventListener('error', () => createTestPattern());
         effectVideo.load();
 
         return effectVideo;
     }
 
-    // [보조] 비디오 로드 실패 시 대체 텍스처
-    function createFallbackTexture() {
+    // 테스트 패턴
+    function createTestPattern() {
         const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 256;
+        canvas.width = 512;
+        canvas.height = 512;
         const ctx = canvas.getContext('2d');
+        const testTexture = new THREE.CanvasTexture(canvas);
 
-        // 체커보드 패턴 (반투명)
-        for (let y = 0; y < 8; y++) {
-            for (let x = 0; x < 8; x++) {
-                ctx.fillStyle = (x + y) % 2 === 0 ? 'rgba(255,71,87,0.8)' : 'rgba(46,213,115,0.8)';
-                ctx.fillRect(x * 32, y * 32, 32, 32);
-            }
-        }
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 20px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('VIDEO', 128, 128);
+        function draw() {
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(0, 0, 512, 512);
 
-        const fallbackTexture = new THREE.CanvasTexture(canvas);
-        if (videoPlane) {
-            videoPlane.material.map = fallbackTexture;
-            videoPlane.material.needsUpdate = true;
+            const t = Date.now() * 0.002;
+            ctx.fillStyle = '#ff4757';
+            ctx.beginPath();
+            ctx.arc(256 + Math.sin(t) * 80, 256 + Math.cos(t * 0.7) * 60, 100, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#3742fa';
+            ctx.beginPath();
+            ctx.arc(256 - Math.sin(t) * 60, 256, 50, 0, Math.PI * 2);
+            ctx.fill();
+
+            testTexture.needsUpdate = true;
+            requestAnimationFrame(draw);
         }
+
+        chromakeyMaterial.uniforms.tex.value = testTexture;
+        draw();
     }
 
     // ==========================================
-    // 4. Three.js 3D 환경 설정
+    // 5. Three.js 초기화
     // ==========================================
     function initThreeJS() {
         scene = new THREE.Scene();
-
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 5;
 
         renderer = new THREE.WebGLRenderer({
             canvas: canvas3D,
             alpha: true,
-            preserveDrawingBuffer: true // [유지] 스크린샷 캡처용
+            preserveDrawingBuffer: true
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
 
-        // [변경] 이펙트 비디오 생성 및 VideoTexture 적용
-        const video = createEffectVideo();
-
-        // THREE.VideoTexture 생성
+        // 비디오 텍스처
+        const video = createChromakeyVideo();
         videoTexture = new THREE.VideoTexture(video);
         videoTexture.minFilter = THREE.LinearFilter;
         videoTexture.magFilter = THREE.LinearFilter;
-        videoTexture.format = THREE.RGBAFormat; // [핵심] 알파 채널 지원
 
-        // [변경] PlaneGeometry로 비디오 표시
-        const geometry = new THREE.PlaneGeometry(2, 2);
-
-        // [핵심] 알파 채널 투명 처리를 위한 MeshBasicMaterial 설정
-        const material = new THREE.MeshBasicMaterial({
-            map: videoTexture,
-            transparent: true,        // [필수] 투명도 활성화
-            side: THREE.DoubleSide,   // [필수] 양면 렌더링
-            alphaTest: 0.1            // 알파값 임계치 (선택)
+        // ShaderMaterial (8th Wall 기본값)
+        chromakeyMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                tex: { value: videoTexture },
+                keyColor: { value: new THREE.Color(0x00ff00) },
+                similarity: { value: 0.01 },
+                smoothness: { value: 0.18 },
+                spill: { value: 0.1 }
+            },
+            vertexShader: VERTEX_SHADER,
+            fragmentShader: FRAGMENT_SHADER,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false
         });
 
-        videoPlane = new THREE.Mesh(geometry, material);
-        videoPlane.position.set(0, 0, 2); // z=2 위치 (카메라 앞)
-        scene.add(videoPlane);
+        // Plane 생성
+        const geometry = new THREE.PlaneGeometry(3, 2);
+        chromakeyPlane = new THREE.Mesh(geometry, chromakeyMaterial);
+        chromakeyPlane.position.set(0, 0, 2);
+        scene.add(chromakeyPlane);
 
         animate();
     }
 
-    // 렌더링 루프
     function animate() {
         requestAnimationFrame(animate);
-
-        // [선택] Plane에 부드러운 회전 애니메이션 적용
-        if (videoPlane) {
-            videoPlane.rotation.y = Math.sin(Date.now() * 0.001) * 0.3;
-        }
-
-        // VideoTexture 자동 업데이트 (재생 중일 때)
         if (videoTexture && effectVideo && !effectVideo.paused) {
             videoTexture.needsUpdate = true;
         }
-
         renderer.render(scene, camera);
     }
 
-    // 윈도우 리사이즈 대응
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
@@ -248,101 +230,59 @@
     });
 
     // ==========================================
-    // 5. 비디오 재생 제어 (브라우저 정책 대응)
+    // 6. 비디오 재생
     // ==========================================
-    async function playEffectVideo() {
+    async function toggleVideo() {
         if (!effectVideo) return;
-
-        try {
-            // [핵심] play()는 Promise 반환 - 에러 핸들링 필수
-            await effectVideo.play();
-            updateStatus('이펙트 재생 중 ▶️');
-            playBtn.textContent = '⏸️ 일시정지';
-        } catch (err) {
-            // 자동재생 차단 시 사용자 인터랙션 필요
-            updateStatus('재생 실패: ' + err.message);
-            console.error('Play error:', err);
-        }
-    }
-
-    function toggleEffectVideo() {
-        if (!effectVideo) return;
+        const btn = document.getElementById('play-btn');
 
         if (effectVideo.paused) {
-            playEffectVideo();
+            try {
+                await effectVideo.play();
+                btn.textContent = '⏸️ 정지';
+            } catch (e) { console.error(e); }
         } else {
             effectVideo.pause();
-            updateStatus('이펙트 일시정지 ⏸️');
-            playBtn.textContent = '▶️ 이펙트 재생';
+            btn.textContent = '▶️ 재생';
         }
     }
 
     // ==========================================
-    // 6. 스크린샷 캡처 (기존 로직 유지)
+    // 7. 스크린샷
     // ==========================================
     function takeScreenshot() {
-        // 캡처 전 비디오 재생 시도 (첫 클릭 시 재생 활성화)
-        if (effectVideo && effectVideo.paused) {
-            playEffectVideo();
-        }
-
+        const w = window.innerWidth * window.devicePixelRatio;
+        const h = window.innerHeight * window.devicePixelRatio;
         const captureCanvas = document.createElement('canvas');
-        const width = window.innerWidth * window.devicePixelRatio;
-        const height = window.innerHeight * window.devicePixelRatio;
-
-        captureCanvas.width = width;
-        captureCanvas.height = height;
+        captureCanvas.width = w;
+        captureCanvas.height = h;
         const ctx = captureCanvas.getContext('2d');
 
-        // 카메라 비디오 그리기
-        drawVideoCover(ctx, cameraVideo, width, height);
+        // 카메라 배경
+        const vw = cameraVideo.videoWidth || w, vh = cameraVideo.videoHeight || h;
+        const tr = w / h, vr = vw / vh;
+        let sx, sy, sw, sh;
+        if (vr > tr) { sh = vh; sw = vh * tr; sx = (vw - sw) / 2; sy = 0; }
+        else { sw = vw; sh = vw / tr; sx = 0; sy = (vh - sh) / 2; }
+        ctx.drawImage(cameraVideo, sx, sy, sw, sh, 0, 0, w, h);
 
-        // [호환성 유지] WebGL Canvas 그리기 (VideoTexture 포함)
-        ctx.drawImage(canvas3D, 0, 0, width, height);
+        // 3D 오버레이
+        ctx.drawImage(canvas3D, 0, 0, w, h);
 
-        // 다운로드
-        const dataURL = captureCanvas.toDataURL('image/png');
         const link = document.createElement('a');
-        link.download = `ar-capture-${Date.now()}.png`;
-        link.href = dataURL;
+        link.download = `capture-${Date.now()}.png`;
+        link.href = captureCanvas.toDataURL('image/png');
         link.click();
-
-        updateStatus('스크린샷 저장됨! 📸');
-    }
-
-    function drawVideoCover(ctx, videoEl, targetW, targetH) {
-        const vidW = videoEl.videoWidth || targetW;
-        const vidH = videoEl.videoHeight || targetH;
-        const targetRatio = targetW / targetH;
-        const vidRatio = vidW / vidH;
-        let sx, sy, sW, sH;
-
-        if (vidRatio > targetRatio) {
-            sH = vidH;
-            sW = vidH * targetRatio;
-            sx = (vidW - sW) / 2;
-            sy = 0;
-        } else {
-            sW = vidW;
-            sH = vidW / targetRatio;
-            sx = 0;
-            sy = (vidH - sH) / 2;
-        }
-        ctx.drawImage(videoEl, sx, sy, sW, sH, 0, 0, targetW, targetH);
-    }
-
-    function updateStatus(msg) {
-        statusEl.textContent = '상태: ' + msg;
     }
 
     // ==========================================
-    // 7. 실행 시작
+    // 8. 초기화
     // ==========================================
     initThreeJS();
     startCamera();
 
-    playBtn.addEventListener('click', toggleEffectVideo);
-    captureBtn.addEventListener('click', takeScreenshot);
+    document.getElementById('play-btn').addEventListener('click', toggleVideo);
+    document.getElementById('capture-btn').addEventListener('click', takeScreenshot);
 </script>
 </body>
 </html>
