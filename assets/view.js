@@ -86,10 +86,32 @@ class ARCamView {
         this.object.visible = false;
 
         // 터치 컨트롤 설정값 (외부에서 조정 가능)
-        this.MOVE_SENSITIVITY = 0.0017;  // 이동 감도 (낮을수록 느림)
-        this.MIN_SCALE = 0.3;          // 최소 스케일
-        this.MAX_SCALE = 5.0;          // 최대 스케일
-        this.LONG_PRESS_TIME = 300;    // 롱프레스 시간 (ms)
+        this.MOVE_SENSITIVITY = 0.01;  // 이동 감도 (낮을수록 느림)
+        this.MIN_SCALE = 0.3;          // 핀치 줌 최소 스케일
+        this.MAX_SCALE = 3.0;          // 핀치 줌 최대 스케일
+        this.LONG_PRESS_TIME = 500;    // 롱프레스 시간 (ms)
+
+        // 빌보드 설정
+        this.billboardEnabled = true;  // 빌보드 활성화 여부
+        this.billboardMode = 'cylindrical'; // 'spherical' | 'cylindrical'
+
+        // 빌보드 계산용 벡터 (매 프레임 재생성 방지)
+        this._billboardTarget = new THREE.Vector3();
+        this._billboardUp = new THREE.Vector3(0, 1, 0);
+
+        // ==========================================
+        // 스케일 제한 및 가시성 보장 설정
+        // ==========================================
+        this.minAllowedScale = 0.1;       // 절대 최소 스케일
+        this.maxAllowedScale = 10.0;      // 절대 최대 스케일
+        this.minVisibleSize = 50;         // 화면상 최소 픽셀 크기
+        this.distanceScaleEnabled = true; // 거리 기반 스케일 보정 활성화
+        this.baseDistance = 10;           // 기준 거리 (이 거리에서 스케일 1.0)
+        this.distanceScaleFactor = 0.5;   // 거리 스케일 보정 계수 (0~1, 높을수록 강하게 보정)
+
+        // 계산용 캐시 벡터
+        this._distanceVec = new THREE.Vector3();
+        this._userScale = scale; // 사용자 설정 스케일 저장
 
         this.scene = new THREE.Scene();
         this.scene.add(new THREE.AmbientLight(0x808080));
@@ -168,8 +190,11 @@ class ARCamView {
             const ts = e.targetTouches;
             if (isPinch && ts.length === 2) {
                 const d = pinchDist(ts);
-                const s = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, initScale * (d / initPinchDist)));
-                this.object.scale.set(s, s, s);
+                const rawScale = initScale * (d / initPinchDist);
+                // 핀치 줌 범위 제한 후 절대 스케일 제한 적용
+                const clampedScale = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, rawScale));
+                this._userScale = clampedScale; // 사용자 의도 저장
+                this.enforceScaleLimits(clampedScale);
             } else if (isDrag && ts.length === 1 && selected) {
                 const dx = ts[0].clientX - startPos.x, dy = ts[0].clientY - startPos.y;
                 const depth = (this.camera.position.z - selected.position.z) * this.MOVE_SENSITIVITY;
@@ -200,15 +225,144 @@ class ARCamView {
         canvas.addEventListener('mouseup', () => { mouseDown = false; selected = null; });
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const s = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, this.object.scale.x * (e.deltaY > 0 ? 0.9 : 1.1)));
-            this.object.scale.set(s, s, s);
+            const rawScale = this.object.scale.x * (e.deltaY > 0 ? 0.9 : 1.1);
+            const clampedScale = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, rawScale));
+            this._userScale = clampedScale;
+            this.enforceScaleLimits(clampedScale);
         }, { passive: false });
     }
 
     _render() {
         requestAnimationFrame(this._render.bind(this));
+
+        // 빌보드 업데이트
+        if (this.billboardEnabled && this.object.visible) {
+            this._updateBillboard();
+        }
+
+        // 가시성 보장 (거리 기반 스케일 보정)
+        if (this.object.visible && this.distanceScaleEnabled) {
+            this.ensureMinimumVisibility();
+        }
+
         if (this.effectVideo && !this.effectVideo.paused) this.videoTexture.needsUpdate = true;
         this.renderer.render(this.scene, this.camera);
+    }
+
+    // ==========================================
+    // 빌보드 기능
+    // ==========================================
+    _updateBillboard() {
+        if (this.billboardMode === 'spherical') {
+            this._sphericalBillboard();
+        } else {
+            this._cylindricalBillboard();
+        }
+    }
+
+    // 구형 빌보드: 모든 축에서 카메라를 완전히 추적
+    _sphericalBillboard() {
+        // 카메라 위치를 바라보도록 설정
+        this._billboardTarget.copy(this.camera.position);
+        this.object.lookAt(this._billboardTarget);
+
+        // PlaneGeometry는 기본적으로 -Z를 향하므로 뒤집힘 보정 불필요
+        // lookAt은 +Z가 타겟을 향하게 하므로 Plane 앞면이 카메라를 향함
+    }
+
+    // 원통형 빌보드: Y축 회전만 (수직 유지, 뒤집힘 방지)
+    _cylindricalBillboard() {
+        // Y축만 회전하도록 타겟의 Y를 오브젝트와 동일하게 설정
+        this._billboardTarget.set(
+            this.camera.position.x,
+            this.object.position.y,  // Y 고정
+            this.camera.position.z
+        );
+        this.object.lookAt(this._billboardTarget);
+    }
+
+    // 빌보드 모드 설정 메서드
+    setBillboardMode(mode) {
+        if (mode === 'spherical' || mode === 'cylindrical' || mode === 'none') {
+            this.billboardMode = mode;
+            this.billboardEnabled = (mode !== 'none');
+        }
+    }
+
+    // ==========================================
+    // 스케일 제한 및 가시성 보장
+    // ==========================================
+
+    // 스케일 클램핑 (최소/최대 강제)
+    enforceScaleLimits(scale = null) {
+        if (scale === null) {
+            scale = this.object.scale.x;
+        }
+
+        const clampedScale = THREE.MathUtils.clamp(
+            scale,
+            this.minAllowedScale,
+            this.maxAllowedScale
+        );
+
+        this.object.scale.set(clampedScale, clampedScale, clampedScale);
+        return clampedScale;
+    }
+
+    // 카메라와 개체 간 거리 계산
+    getDistanceToCamera() {
+        this._distanceVec.copy(this.object.position).sub(this.camera.position);
+        return this._distanceVec.length();
+    }
+
+    // 거리 기반 스케일 보정 (멀어지면 커지게)
+    applyDistanceScaleCompensation() {
+        if (!this.distanceScaleEnabled) return;
+
+        const distance = this.getDistanceToCamera();
+
+        // 기준 거리 대비 비율 계산
+        const distanceRatio = distance / this.baseDistance;
+
+        // 보정 계수 적용 (lerp로 부드럽게)
+        const compensation = 1 + (distanceRatio - 1) * this.distanceScaleFactor;
+
+        // 현재 사용자 설정 스케일에 보정 적용
+        const baseScale = this._userScale || 1.0;
+        const compensatedScale = baseScale * Math.max(0.5, compensation);
+
+        this.enforceScaleLimits(compensatedScale);
+    }
+
+    // 화면상 픽셀 크기 기반 가시성 보장
+    ensureMinimumVisibility() {
+        const distance = this.getDistanceToCamera();
+
+        // 화면상 예상 크기 계산 (근사치)
+        const fov = this.camera.fov * (Math.PI / 180);
+        const screenHeight = this.renderer.domElement.height;
+        const objectWorldSize = this.object.scale.x * 3; // PlaneGeometry 기본 크기 3
+
+        // 화면상 픽셀 크기 = (오브젝트 크기 / 거리) * (화면높이 / 2 / tan(fov/2))
+        const projectedSize = (objectWorldSize / distance) * (screenHeight / (2 * Math.tan(fov / 2)));
+
+        // 최소 픽셀 크기보다 작으면 스케일 조정
+        if (projectedSize < this.minVisibleSize) {
+            const requiredScale = (this.minVisibleSize / projectedSize) * this.object.scale.x;
+            this.enforceScaleLimits(requiredScale);
+        }
+    }
+
+    // 스케일 직접 설정 (사용자 의도 저장)
+    setScale(scale) {
+        this._userScale = THREE.MathUtils.clamp(scale, this.MIN_SCALE, this.MAX_SCALE);
+        this.enforceScaleLimits(this._userScale);
+    }
+
+    // 초기 스케일로 리셋
+    resetScale() {
+        this._userScale = 1.0;
+        this.object.scale.set(1, 1, 1);
     }
 
     playVideo() { this.effectVideo?.play().catch(console.error); }
