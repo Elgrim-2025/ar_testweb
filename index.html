@@ -248,8 +248,6 @@
             const alva = await AlvaAR.Initialize( $canvas.width, $canvas.height );
             const view = new ARCamView( $view, $canvas.width, $canvas.height );
 
-            view.setBillboardMode('cylindrical');
-
             Stats.add( 'total' );
             Stats.add( 'video' );
             Stats.add( 'slam' );
