@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+    <title>Zappar WebAR Demo — Place & Manipulate Objects</title>
+    <script src="https://libs.zapworks.com/webxr/7.0.7/zappar.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+    <style>
+        html,body{height:100%;margin:0;background:#000}
+        #info{position:fixed;left:12px;top:12px;z-index:10;color:#fff;font-family:sans-serif;background:rgba(0,0,0,0.45);padding:10px;border-radius:8px;max-width:320px}
+        .btn{display:inline-block;margin:6px 6px 0 0;padding:6px 10px;background:#1b1b1b;color:#fff;border-radius:6px;font-size:14px;cursor:pointer}
+        #hint{font-size:13px;opacity:0.95}
+        #overlay{position:fixed;left:0;right:0;bottom:12px;z-index:10;text-align:center}
+        canvas{width:100%;height:100%;touch-action:none;}
+    </style>
+</head>
+<body>
+<div id="info">
+    <div style="font-weight:600;margin-bottom:6px">Zappar WebAR Demo — place & manipulate objects</div>
+    <div id="hint">Tap to place selected item. Use two fingers to scale/rotate. Single finger drag rotates selected object. Tap empty space to deselect.</div>
+    <div style="margin-top:8px">
+        <button id="selBox" class="btn">Select Box</button>
+        <button id="selChair" class="btn">Select Chair</button>
+        <button id="selTable" class="btn">Select Table</button>
+        <button id="selProduct" class="btn">Select Product</button>
+    </div>
+    <div style="margin-top:8px">
+        <button id="reset" class="btn">Reset Scene</button>
+        <button id="snap" class="btn">Snapshot</button>
+    </div>
+</div>
+<div id="overlay"></div>
+<button id="start-ar" class="btn" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:100;">Start AR</button>
+<script>
+    // Ensure Zappar SDK has loaded before using its classes
+    window.addEventListener('DOMContentLoaded', () => {
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        let pipeline, zapparCamera, camera, anchorGroup;
+        let arStarted = false; // Track AR state for safe pipeline reuse
+
+        // Prototype models
+        function makeBox() {
+            const g = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+            const m = new THREE.MeshStandardMaterial({ metalness: 0.2, roughness: 0.6, color: 0x2ecc71 });
+            return new THREE.Mesh(g, m);
+        }
+        function makeChair() {
+            const group = new THREE.Group();
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.3), new THREE.MeshStandardMaterial({ color: 0x8e44ad }));
+            seat.position.y = 0.15;
+            group.add(seat);
+            const back = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.05), new THREE.MeshStandardMaterial({ color: 0x7d3c98 }));
+            back.position.set(0, 0.35, -0.125);
+            group.add(back);
+            const legGeo = new THREE.BoxGeometry(0.05, 0.15, 0.05);
+            const legMat = new THREE.MeshStandardMaterial({ color: 0x5d2f70 });
+            const legs = [new THREE.Mesh(legGeo, legMat), new THREE.Mesh(legGeo, legMat), new THREE.Mesh(legGeo, legMat), new THREE.Mesh(legGeo, legMat)];
+            legs[0].position.set(0.12, 0.075, 0.12);
+            legs[1].position.set(-0.12, 0.075, 0.12);
+            legs[2].position.set(0.12, 0.075, -0.12);
+            legs[3].position.set(-0.12, 0.075, -0.12);
+            legs.forEach(l=>group.add(l));
+            group.scale.set(1,1,1);
+            return group;
+        }
+        function makeTable() {
+            const group = new THREE.Group();
+            const top = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.03, 0.5), new THREE.MeshStandardMaterial({ color: 0xd35400 }));
+            top.position.y = 0.4;
+            group.add(top);
+            const legGeo = new THREE.BoxGeometry(0.05, 0.4, 0.05);
+            const legMat = new THREE.MeshStandardMaterial({ color: 0x7f4a16 });
+            const legs = [new THREE.Mesh(legGeo, legMat), new THREE.Mesh(legGeo, legMat), new THREE.Mesh(legGeo, legMat), new THREE.Mesh(legGeo, legMat)];
+            legs[0].position.set(0.35, 0.2, 0.22);
+            legs[1].position.set(-0.35, 0.2, 0.22);
+            legs[2].position.set(0.35, 0.2, -0.22);
+            legs[3].position.set(-0.35, 0.2, -0.22);
+            legs.forEach(l=>group.add(l));
+            return group;
+        }
+        function makeProduct() {
+            const group = new THREE.Group();
+            const cy = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.2,32), new THREE.MeshStandardMaterial({ color: 0x3498db, metalness:0.3, roughness:0.4 }));
+            cy.position.y = 0.12;
+            group.add(cy);
+            const cap = new THREE.Mesh(new THREE.CircleGeometry(0.12,32), new THREE.MeshStandardMaterial({ color: 0x2c3e50 }));
+            cap.rotation.x = -Math.PI/2; cap.position.y = 0.22; group.add(cap);
+            return group;
+        }
+        let prototypeType = 'box';
+        let prototypes = {
+            box: makeBox,
+            chair: makeChair,
+            table: makeTable,
+            product: makeProduct
+        };
+
+        window.placedObjects = [];
+        window.selectedObject = null;
+
+        document.getElementById('selBox').addEventListener('click', ()=>prototypeType='box');
+        document.getElementById('selChair').addEventListener('click', ()=>prototypeType='chair');
+        document.getElementById('selTable').addEventListener('click', ()=>prototypeType='table');
+        document.getElementById('selProduct').addEventListener('click', ()=>prototypeType='product');
+        document.getElementById('reset').addEventListener('click', resetScene);
+        document.getElementById('snap').addEventListener('click', snapshot);
+
+        window.addEventListener('resize', ()=>{
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Reticle/placement logic
+        let reticleObj;
+        function makeReticle() {
+            const ring = new THREE.RingGeometry(0.08,0.1,32).rotateX(-Math.PI/2);
+            const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const mesh = new THREE.Mesh(ring, mat);
+            mesh.position.set(0, 0, -1); // 1m phía trước
+            mesh.visible = false;
+            return mesh;
+        }
+
+        // Object placement logic
+        function raycastGround() {
+            if (reticleObj) reticleObj.visible = true;
+            // (Bạn có thể nâng cao bằng Zappar placement API nếu cần tracking mặt phẳng)
+        }
+        function placeObject() {
+            if(!reticleObj || !reticleObj.visible) return;
+            const ObjFactory = prototypes[prototypeType];
+            if (!ObjFactory) return;
+            const clone = ObjFactory();
+            clone.position.copy(reticleObj.position);
+            clone.quaternion.copy(reticleObj.quaternion);
+            clone.userData = { type: prototypeType };
+            anchorGroup.add(clone);
+            window.placedObjects.push(clone);
+            selectObject(clone);
+        }
+        // Touch/select logic
+        function selectObject(obj){
+            if(window.selectedObject === obj) return;
+            if(window.selectedObject) setOutline(window.selectedObject, false);
+            window.selectedObject = obj;
+            setOutline(obj, true);
+        }
+        function deselect(){
+            if(window.selectedObject) { setOutline(window.selectedObject, false); window.selectedObject = null; }
+        }
+        function setOutline(obj, on){
+            if(!obj) return;
+            if(on){
+                if(!obj.userData._selectRing){
+                    const r = new THREE.RingGeometry(0.11,0.13,32).rotateX(-Math.PI/2);
+                    const m = new THREE.MeshBasicMaterial({ color:0xffff00 });
+                    const ring = new THREE.Mesh(r,m);
+                    ring.position.y = 0.01;
+                    obj.add(ring);
+                    obj.userData._selectRing = ring;
+                }
+            } else {
+                if(obj.userData._selectRing){ obj.remove(obj.userData._selectRing); delete obj.userData._selectRing; }
+            }
+        }
+        function resetScene(){
+            for(const o of window.placedObjects){ anchorGroup && anchorGroup.remove(o); }
+            window.placedObjects.length = 0;
+            deselect();
+        }
+        function snapshot(){
+            const data = renderer.domElement.toDataURL('image/png');
+            const w = window.open('about:blank');
+            w.document.write('<img src="'+data+'" style="width:100%"/>');
+        }
+
+        // Touch gesture logic
+        function setupTouchGestures(){
+            let lastTouch = null;
+            let lastDist = null;
+            let lastAngle = null;
+
+            window.addEventListener('touchstart', (e)=>{
+                const touches = e.touches;
+                if(touches.length===1){
+                    lastTouch = touches[0];
+                    const sel = pickObject(touches[0]);
+                    if(sel){ selectObject(sel); } else { deselect(); }
+                }
+                if(touches.length===2){
+                    lastDist = dist(touches[0], touches[1]);
+                    lastAngle = angle(touches[0], touches[1]);
+                }
+            }, {passive:true});
+
+            window.addEventListener('touchmove', (e)=>{
+                const touches = e.touches;
+                if(!window.selectedObject) return;
+                if(touches.length===1 && lastTouch){
+                    const t = touches[0];
+                    const dx = t.clientX - lastTouch.clientX;
+                    const rotY = dx * 0.005;
+                    window.selectedObject.rotation.y -= rotY;
+                    lastTouch = t;
+                } else if(touches.length===2 && lastDist && lastAngle){
+                    const d = dist(touches[0], touches[1]);
+                    const a = angle(touches[0], touches[1]);
+                    const scaleFactor = d / lastDist;
+                    window.selectedObject.scale.multiplyScalar(scaleFactor);
+                    window.selectedObject.rotation.y -= (a - lastAngle);
+                    lastDist = d; lastAngle = a;
+                }
+            }, {passive:true});
+            window.addEventListener('touchend', (e)=>{
+                lastDist = null; lastAngle = null; lastTouch = null;
+            });
+        }
+        function dist(a,b){
+            const dx = a.clientX - b.clientX; const dy = a.clientY - b.clientY; return Math.hypot(dx,dy);
+        }
+        function angle(a,b){ return Math.atan2(b.clientY-a.clientY, b.clientX-a.clientX); }
+
+        // Raycasting
+        const raycaster = new THREE.Raycaster();
+        function pickObject(touch){
+            const x = (touch.clientX / window.innerWidth) * 2 - 1;
+            const y = - (touch.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera({x,y}, camera);
+            const list = window.placedObjects.slice().reverse();
+            const intersects = raycaster.intersectObjects(list, true);
+            let obj = null;
+            if(intersects.length>0){
+                obj = intersects[0].object;
+                while(obj && !window.placedObjects.includes(obj)){ obj = obj.parent; }
+            }
+            return obj || null;
+        }
+
+        // Only start AR when user clicks Start AR button!
+        document.getElementById('start-ar').addEventListener('click', function() {
+            if(arStarted) return;
+            arStarted = true;
+            document.getElementById('start-ar').style.display = 'none';
+
+            // Zappar pipeline/camera setup
+            pipeline = new Zappar.Pipeline();
+            zapparCamera = new Zappar.Camera();
+            camera = new THREE.PerspectiveCamera();
+            camera.matrixAutoUpdate = false;
+
+            // Lighting
+            const hemi = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+            const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+            dir.position.set(0.5, 1, 0.5);
+
+            // Anchor group for world placement
+            anchorGroup = new Zappar.WorldTrackingGroup('default', pipeline);
+            scene.add(anchorGroup);
+            scene.add(hemi);
+            scene.add(dir);
+
+            // Reticle
+            reticleObj = makeReticle();
+            anchorGroup.add(reticleObj);
+
+            // Start camera — this will ASK for camera access!
+            zapparCamera.start(true);
+
+            // Touch for place object
+            renderer.domElement.addEventListener('click', (e) => {
+                if(!pickObject(e)) {
+                    raycastGround();
+                    placeObject();
+                }
+            });
+
+            // Main loop
+            function animate() {
+                pipeline.processGL();
+                zapparCamera.updateFrame();
+                camera.matrix.fromArray(zapparCamera.cameraPoseRaw());
+                camera.matrix.decompose(camera.position, camera.quaternion, camera.scale);
+                camera.updateMatrixWorld(true);
+                renderer.render(scene, camera);
+                requestAnimationFrame(animate);
+            }
+            animate();
+
+            // Gesture handlers
+            setupTouchGestures();
+
+            raycastGround();
+        });
+
+    });
+</script>
+</body>
+</html>
