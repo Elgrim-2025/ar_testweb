@@ -103,31 +103,7 @@
             cursor: pointer;
         }
 
-        .nav-buttons {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 10px;
-            z-index: 100;
-        }
 
-        .nav-buttons button {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            border-radius: 4px;
-            color: #ffffff;
-            padding: 10px 20px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .nav-buttons button:hover {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: rgba(255, 255, 255, 0.8);
-        }
 
         @keyframes fadeIn {
             0% {
@@ -162,110 +138,88 @@
             }
         }
 
-        /* Screenshot button UI */
-        #ui-layer {
+        /* AR Object Styles */
+        .ar-object {
             position: absolute;
-            bottom: 30px;
-            left: 0;
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            z-index: 10;
-            pointer-events: none;
-        }
-
-        #capture-btn {
-            padding: 15px 30px;
-            font-size: 18px;
-            font-weight: bold;
-            color: white;
-            background-color: #ff4757;
-            border: none;
-            border-radius: 50px;
-            cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            transition: transform 0.1s;
-            pointer-events: auto;
-        }
-
-        #capture-btn:active {
-            transform: scale(0.95);
-        }
-
-        /* Fixed AR Object UI */
-        #fixed-object-controls {
-            position: absolute;
-            top: 70px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 10px;
-            z-index: 100;
-        }
-
-        #fixed-object-controls button {
-            background: rgba(255, 165, 0, 0.8);
-            border: 1px solid rgba(255, 165, 0, 1);
-            border-radius: 4px;
-            color: #ffffff;
-            padding: 10px 15px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        #fixed-object-controls button:hover {
-            background: rgba(255, 165, 0, 1);
-        }
-
-        #fixed-object-controls button.active {
-            background: rgba(255, 50, 50, 0.8);
-            border-color: rgba(255, 50, 50, 1);
-        }
-
-        .fixed-ar-object {
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            background: radial-gradient(circle, #ff6b6b, #ff4757);
-            border: 2px solid white;
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle, #00ff88, #00cc66);
+            border: 3px solid rgba(255, 255, 255, 0.8);
             border-radius: 50%;
-            box-shadow: 0 0 10px rgba(255, 107, 107, 0.8);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
             transform: translate(-50%, -50%);
             z-index: 5;
             pointer-events: none;
-            animation: pulse 2s infinite;
+            transition: all 0.3s ease;
         }
 
-        @keyframes pulse {
-            0% {
-                box-shadow: 0 0 10px rgba(255, 107, 107, 0.8);
+        .ar-object.floating {
+            animation: arFloat 3s ease-in-out infinite, arPulse 2s ease-in-out infinite;
+        }
+
+        .ar-object.anchored {
+            animation: none;
+            background: radial-gradient(circle, #ff6b6b, #ff4757);
+            box-shadow: 0 0 15px rgba(255, 107, 107, 0.8);
+        }
+
+        @keyframes arFloat {
+            0%, 100% {
+                transform: translate(-50%, -50%) translateY(0px);
             }
             50% {
-                box-shadow: 0 0 20px rgba(255, 107, 107, 1);
+                transform: translate(-50%, -50%) translateY(-10px);
             }
-            100% {
-                box-shadow: 0 0 10px rgba(255, 107, 107, 0.8);
+        }
+
+        @keyframes arPulse {
+            0%, 100% {
+                box-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
+            }
+            50% {
+                box-shadow: 0 0 30px rgba(0, 255, 136, 1);
+            }
+        }
+
+        /* Long Press Indicator */
+        .long-press-indicator {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 4;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .long-press-indicator.active {
+            opacity: 1;
+            animation: pressProgress 1s linear;
+        }
+
+        @keyframes pressProgress {
+            from {
+                border-color: rgba(255, 255, 255, 0.3);
+                transform: translate(-50%, -50%) scale(1);
+            }
+            to {
+                border-color: rgba(255, 255, 255, 1);
+                transform: translate(-50%, -50%) scale(0.8);
             }
         }
     </style>
 </head>
 <body>
-<div class="nav-buttons">
-    <button onclick="location.href='test_1.html'">test_1</button>
-</div>
-<div id="fixed-object-controls">
-    <button id="place-object-btn">객체 배치 모드</button>
-    <button id="clear-objects-btn">모든 객체 제거</button>
-</div>
+
 <div id="container"></div>
 <div id="overlay">
     <button id="start_button">Start</button>
     <div id="splash"></div>
 </div>
-<div id="ui-layer">
-    <button id="capture-btn">📸 스크린샷 찍기</button>
-</div>
+
 <script type="module">
     import { Stats } from "./assets/stats.js";
     import { AlvaAR } from './assets/alva_ar.js';
