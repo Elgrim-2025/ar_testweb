@@ -103,7 +103,31 @@
             cursor: pointer;
         }
 
+        .nav-buttons {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
 
+        .nav-buttons button {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 4px;
+            color: #ffffff;
+            padding: 10px 20px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .nav-buttons button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.8);
+        }
 
         @keyframes fadeIn {
             0% {
@@ -138,88 +162,110 @@
             }
         }
 
-        /* AR Object Styles */
-        .ar-object {
+        /* Screenshot button UI */
+        #ui-layer {
             position: absolute;
-            width: 60px;
-            height: 60px;
-            background: radial-gradient(circle, #00ff88, #00cc66);
-            border: 3px solid rgba(255, 255, 255, 0.8);
+            bottom: 30px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #capture-btn {
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            background-color: #ff4757;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+            pointer-events: auto;
+        }
+
+        #capture-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Fixed AR Object UI */
+        #fixed-object-controls {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+
+        #fixed-object-controls button {
+            background: rgba(255, 165, 0, 0.8);
+            border: 1px solid rgba(255, 165, 0, 1);
+            border-radius: 4px;
+            color: #ffffff;
+            padding: 10px 15px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #fixed-object-controls button:hover {
+            background: rgba(255, 165, 0, 1);
+        }
+
+        #fixed-object-controls button.active {
+            background: rgba(255, 50, 50, 0.8);
+            border-color: rgba(255, 50, 50, 1);
+        }
+
+        .fixed-ar-object {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle, #ff6b6b, #ff4757);
+            border: 2px solid white;
             border-radius: 50%;
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
+            box-shadow: 0 0 10px rgba(255, 107, 107, 0.8);
             transform: translate(-50%, -50%);
             z-index: 5;
             pointer-events: none;
-            transition: all 0.3s ease;
+            animation: pulse 2s infinite;
         }
 
-        .ar-object.floating {
-            animation: arFloat 3s ease-in-out infinite, arPulse 2s ease-in-out infinite;
-        }
-
-        .ar-object.anchored {
-            animation: none;
-            background: radial-gradient(circle, #ff6b6b, #ff4757);
-            box-shadow: 0 0 15px rgba(255, 107, 107, 0.8);
-        }
-
-        @keyframes arFloat {
-            0%, 100% {
-                transform: translate(-50%, -50%) translateY(0px);
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 10px rgba(255, 107, 107, 0.8);
             }
             50% {
-                transform: translate(-50%, -50%) translateY(-10px);
+                box-shadow: 0 0 20px rgba(255, 107, 107, 1);
             }
-        }
-
-        @keyframes arPulse {
-            0%, 100% {
-                box-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
-            }
-            50% {
-                box-shadow: 0 0 30px rgba(0, 255, 136, 1);
-            }
-        }
-
-        /* Long Press Indicator */
-        .long-press-indicator {
-            position: absolute;
-            width: 80px;
-            height: 80px;
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 4;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-
-        .long-press-indicator.active {
-            opacity: 1;
-            animation: pressProgress 1s linear;
-        }
-
-        @keyframes pressProgress {
-            from {
-                border-color: rgba(255, 255, 255, 0.3);
-                transform: translate(-50%, -50%) scale(1);
-            }
-            to {
-                border-color: rgba(255, 255, 255, 1);
-                transform: translate(-50%, -50%) scale(0.8);
+            100% {
+                box-shadow: 0 0 10px rgba(255, 107, 107, 0.8);
             }
         }
     </style>
 </head>
 <body>
-
+<div class="nav-buttons">
+    <button onclick="location.href='test_1.html'">test_1</button>
+</div>
+<div id="fixed-object-controls">
+    <button id="place-object-btn">객체 배치 모드</button>
+    <button id="clear-objects-btn">모든 객체 제거</button>
+</div>
 <div id="container"></div>
 <div id="overlay">
     <button id="start_button">Start</button>
     <div id="splash"></div>
 </div>
-
+<div id="ui-layer">
+    <button id="capture-btn">📸 스크린샷 찍기</button>
+</div>
 <script type="module">
     import { Stats } from "./assets/stats.js";
     import { AlvaAR } from './assets/alva_ar.js';
@@ -272,192 +318,97 @@
 
             document.body.appendChild( Stats.el );
 
-            // AR World Anchoring System
-            let anchoredObjects = [];
-            let floatingObject = null;
-            let currentPose = null;
-            let longPressTimer = null;
-            let longPressActive = false;
-            let initialPose = null;
+            // Fixed AR Objects Management
+            let fixedObjects = [];
+            let isPlacementMode = false;
+            const $placeObjectBtn = document.getElementById('place-object-btn');
+            const $clearObjectsBtn = document.getElementById('clear-objects-btn');
 
-            // Create floating AR object
-            function createFloatingObject() {
-                if (floatingObject) return;
-
-                floatingObject = document.createElement('div');
-                floatingObject.className = 'ar-object floating';
-                floatingObject.style.left = '50%';
-                floatingObject.style.top = '50%';
-                $container.appendChild(floatingObject);
+            function togglePlacementMode() {
+                isPlacementMode = !isPlacementMode;
+                $placeObjectBtn.classList.toggle('active', isPlacementMode);
+                $placeObjectBtn.textContent = isPlacementMode ? '배치 모드 종료' : '객체 배치 모드';
             }
 
-            // Simple matrix operations for 3D transformation
-            function multiplyMatrixVector(matrix, vector) {
-                return [
-                    matrix[0] * vector[0] + matrix[1] * vector[1] + matrix[2] * vector[2] + matrix[3],
-                    matrix[4] * vector[0] + matrix[5] * vector[1] + matrix[6] * vector[2] + matrix[7],
-                    matrix[8] * vector[0] + matrix[9] * vector[1] + matrix[10] * vector[2] + matrix[11]
-                ];
+            function placeFixedObject(x, y) {
+                const objectId = 'fixed-obj-' + Date.now();
+                const $fixedObject = document.createElement('div');
+                $fixedObject.className = 'fixed-ar-object';
+                $fixedObject.id = objectId;
+                $fixedObject.style.left = x + 'px';
+                $fixedObject.style.top = y + 'px';
+
+                $container.appendChild($fixedObject);
+                fixedObjects.push({ id: objectId, x: x, y: y, element: $fixedObject });
             }
 
-            // Convert 3D world position to screen coordinates
-            function worldToScreen(worldPos, cameraPose) {
-                if (!cameraPose || !initialPose) return null;
-
-                // Calculate relative position from initial camera position
-                const relativePos = [
-                    worldPos.x - initialPose.position[0],
-                    worldPos.y - initialPose.position[1],
-                    worldPos.z - initialPose.position[2]
-                ];
-
-                // Transform to current camera space
-                const currentRelativePos = [
-                    relativePos[0] + (initialPose.position[0] - cameraPose.position[0]),
-                    relativePos[1] + (initialPose.position[1] - cameraPose.position[1]),
-                    relativePos[2] + (initialPose.position[2] - cameraPose.position[2])
-                ];
-
-                // Simple perspective projection
-                const focal = 600;
-                const cx = $canvas.width / 2;
-                const cy = $canvas.height / 2;
-
-                if (currentRelativePos[2] <= 0.1) return null; // Behind camera
-
-                const screenX = cx + (focal * currentRelativePos[0] / currentRelativePos[2]);
-                const screenY = cy - (focal * currentRelativePos[1] / currentRelativePos[2]); // Flip Y
-                const distance = Math.sqrt(
-                    currentRelativePos[0] * currentRelativePos[0] +
-                    currentRelativePos[1] * currentRelativePos[1] +
-                    currentRelativePos[2] * currentRelativePos[2]
-                );
-
-                return { x: screenX, y: screenY, distance: distance };
-            }
-
-            // Anchor object at current position (3D space)
-            function anchorObject() {
-                if (!currentPose || !floatingObject) return;
-
-                // Set initial reference pose if not set
-                if (!initialPose) {
-                    initialPose = JSON.parse(JSON.stringify(currentPose));
-                }
-
-                // Calculate world position (2 units in front of camera)
-                const depth = 2.0;
-                const forward = [
-                    Math.sin(currentPose.rotation[1]) * Math.cos(currentPose.rotation[0]),
-                    -Math.sin(currentPose.rotation[0]),
-                    Math.cos(currentPose.rotation[1]) * Math.cos(currentPose.rotation[0])
-                ];
-
-                const worldPos = {
-                    x: currentPose.position[0] + forward[0] * depth,
-                    y: currentPose.position[1] + forward[1] * depth,
-                    z: currentPose.position[2] + forward[2] * depth
-                };
-
-                // Create anchored object
-                const anchoredObj = {
-                    id: 'anchored-' + Date.now(),
-                    worldPosition: worldPos,
-                    element: floatingObject
-                };
-
-                floatingObject.className = 'ar-object anchored';
-                anchoredObjects.push(anchoredObj);
-                floatingObject = null;
-
-                // Create new floating object after a delay
-                setTimeout(() => createFloatingObject(), 500);
-            }
-
-            // Update anchored objects positions based on camera movement
-            function updateAnchoredObjects() {
-                if (!currentPose || anchoredObjects.length === 0) return;
-
-                anchoredObjects.forEach(obj => {
-                    const screenPos = worldToScreen(obj.worldPosition, currentPose);
-
-                    if (screenPos &&
-                        screenPos.x >= -100 && screenPos.x <= $canvas.width + 100 &&
-                        screenPos.y >= -100 && screenPos.y <= $canvas.height + 100) {
-
-                        // Calculate size based on distance (perspective)
-                        const baseSize = 60;
-                        const scale = Math.max(0.2, Math.min(3.0, 2.0 / screenPos.distance));
-                        const size = baseSize * scale;
-
-                        obj.element.style.left = screenPos.x + 'px';
-                        obj.element.style.top = screenPos.y + 'px';
-                        obj.element.style.width = size + 'px';
-                        obj.element.style.height = size + 'px';
-                        obj.element.style.display = 'block';
-                        obj.element.style.opacity = Math.max(0.3, Math.min(1.0, 3.0 / screenPos.distance));
-                    } else {
-                        // Hide object when out of view
-                        obj.element.style.display = 'none';
+            function clearAllFixedObjects() {
+                fixedObjects.forEach(obj => {
+                    if (obj.element && obj.element.parentNode) {
+                        obj.element.parentNode.removeChild(obj.element);
                     }
                 });
+                fixedObjects = [];
             }
 
-            // Long press handling
-            let pressIndicator = null;
+            // Event listeners for fixed object controls
+            $placeObjectBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                togglePlacementMode();
+            });
 
-            function startLongPress(x, y) {
-                if (longPressActive || !floatingObject) return;
+            $clearObjectsBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                clearAllFixedObjects();
+            });
 
-                longPressActive = true;
-
-                // Create press indicator
-                pressIndicator = document.createElement('div');
-                pressIndicator.className = 'long-press-indicator active';
-                pressIndicator.style.left = x + 'px';
-                pressIndicator.style.top = y + 'px';
-                $container.appendChild(pressIndicator);
-
-                longPressTimer = setTimeout(() => {
-                    anchorObject();
-                    endLongPress();
-                }, 1000);
-            }
-
-            function endLongPress() {
-                longPressActive = false;
-                if (longPressTimer) {
-                    clearTimeout(longPressTimer);
-                    longPressTimer = null;
+            // Container click handler for placing objects or resetting AR
+            $container.addEventListener('click', (e) => {
+                if (isPlacementMode) {
+                    const rect = $container.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    placeFixedObject(x, y);
+                } else {
+                    alva.reset();
                 }
-                if (pressIndicator) {
-                    pressIndicator.remove();
-                    pressIndicator = null;
+            });
+
+            // Screenshot capture function
+            function takeScreenshot(event) {
+                // Prevent event from bubbling to body (which triggers alva.reset())
+                event.stopPropagation();
+
+                const captureCanvas = document.createElement('canvas');
+                const width = $container.clientWidth;
+                const height = $container.clientHeight;
+
+                captureCanvas.width = width;
+                captureCanvas.height = height;
+                const captureCtx = captureCanvas.getContext('2d');
+
+                // Draw the main canvas (camera feed + AR points)
+                captureCtx.drawImage($canvas, 0, 0, width, height);
+
+                // Draw the 3D view canvas if it exists
+                const viewCanvas = $view.querySelector('canvas');
+                if (viewCanvas) {
+                    captureCtx.drawImage(viewCanvas, 0, 0, width, height);
                 }
+
+                // Download the image
+                const dataURL = captureCanvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.download = `ar-capture-${Date.now()}.png`;
+                link.href = dataURL;
+                link.click();
             }
 
-            // Touch/Mouse event handlers
-            $container.addEventListener('mousedown', (e) => {
-                const rect = $container.getBoundingClientRect();
-                startLongPress(e.clientX - rect.left, e.clientY - rect.top);
-            });
-
-            $container.addEventListener('mouseup', endLongPress);
-            $container.addEventListener('mouseleave', endLongPress);
-
-            $container.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                const rect = $container.getBoundingClientRect();
-                const touch = e.touches[0];
-                startLongPress(touch.clientX - rect.left, touch.clientY - rect.top);
-            });
-
-            $container.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                endLongPress();
-            });
-
-            $container.addEventListener('touchcancel', endLongPress);
+            // Connect screenshot button
+            const $captureBtn = document.getElementById('capture-btn');
+            if ($captureBtn) {
+                $captureBtn.addEventListener('click', takeScreenshot);
+            }
 
             onFrame( () =>
             {
@@ -480,20 +431,10 @@
                     if( pose )
                     {
                         view.updateCameraPose( pose );
-                        currentPose = pose;
-
-                        // Create floating object when AR tracking starts
-                        if (!floatingObject && anchoredObjects.length === 0) {
-                            createFloatingObject();
-                        }
-
-                        // Update anchored objects with 3D positioning
-                        updateAnchoredObjects();
                     }
                     else
                     {
                         view.lostCamera();
-                        currentPose = null;
 
                         const dots = alva.getFramePoints();
 
