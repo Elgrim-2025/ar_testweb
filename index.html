@@ -1,168 +1,38 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,shrink-to-fit=no" name="viewport"/>
-    <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
-    <title>AlvaAR Camera</title>
-    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgo=">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Video Texture Demo</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        html,
         body {
-            font-family: 'Helvetica', sans-serif;
+            margin: 0;
             overflow: hidden;
-            background: #000;
+            background-color: #000;
+        }
+        #ar-container {
             position: relative;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            width: 100vw;
+            height: 100vh;
         }
-
-        #container {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            display: block;
-            overflow: hidden;
-            line-height: 0;
-        }
-
-        #container > * {
-            position: absolute;
-            display: block;
-            user-select: none;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            animation: fadeIn 1.2s;
-        }
-
-        canvas {
-            display: block;
+        #camera-feed {
             position: absolute;
             top: 0;
             left: 0;
-        }
-
-        #container > video {
+            width: 100%;
+            height: 100%;
             object-fit: cover;
-            object-position: 50% 50%;
+            z-index: 1;
         }
-
-        #splash {
+        #three-canvas {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: #000;
-            opacity: 1;
-        }
-
-        #overlay {
-            position: absolute;
-            font-size: 16px;
             z-index: 2;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            background: rgba(0, 0, 0, 0.5);
+            pointer-events: none;
         }
-
-        #overlay::before{
-            position: absolute;
-            width: 100%;
-            white-space: pre-wrap;
-            content: "Please allow access \A to your camera.";
-            top:calc(50% + 50px);
-            text-align: center;
-            color: #949494;
-        }
-
-        #overlay button {
-            background: transparent;
-            border: 1px solid rgb(255, 255, 255);
-            border-radius: 4px;
-            color: #ffffff;
-            padding: 12px 18px;
-            text-transform: uppercase;
-            cursor: pointer;
-        }
-
-        .nav-buttons {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 10px;
-            z-index: 100;
-        }
-
-        .nav-buttons button {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            border-radius: 4px;
-            color: #ffffff;
-            padding: 10px 20px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .nav-buttons button:hover {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: rgba(255, 255, 255, 0.8);
-        }
-
-        @keyframes fadeIn {
-            0% {
-                opacity: 0;
-            }
-            50% {
-                opacity: 0.6;
-            }
-            100% {
-                opacity: 1;
-            }
-        }
-
-        @media screen and (max-device-width: 480px) and (orientation: landscape) {
-            #container {
-                display: none;
-            }
-
-            body::before {
-                content: "Rotate device to portrait mode.";
-                color: white;
-            }
-        }
-
-        @media screen and (max-device-width: 480px) and (orientation: portrait) {
-            #container {
-                display: block;
-            }
-
-            body::before {
-                content: none;
-            }
-        }
-
-        /* Screenshot button UI */
         #ui-layer {
             position: absolute;
             bottom: 30px;
@@ -170,11 +40,11 @@
             width: 100%;
             display: flex;
             justify-content: center;
-            z-index: 10;
-            pointer-events: none;
+            gap: 15px;
+            z-index: 3;
+            pointer-events: auto;
         }
-
-        #capture-btn {
+        button {
             padding: 15px 30px;
             font-size: 18px;
             font-weight: bold;
@@ -185,176 +55,294 @@
             cursor: pointer;
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             transition: transform 0.1s;
-            pointer-events: auto;
         }
-
-        #capture-btn:active {
-            transform: scale(0.95);
+        button:active { transform: scale(0.95); }
+        #play-btn { background-color: #2ed573; }
+        #status {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            font-family: sans-serif;
+            font-size: 14px;
+            z-index: 3;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 8px;
         }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-<div class="nav-buttons">
-    <button onclick="location.href='marker.html'">Marker (No IMU)</button>
-    <button onclick="location.href='marker_imu.html'">Marker (IMU)</button>
-    <button onclick="location.href='test_1.html'">test_1</button>
-</div>
-<div id="container"></div>
-<div id="overlay">
-    <button id="start_button">Start</button>
-    <div id="splash"></div>
-</div>
-<div id="ui-layer">
-    <button id="capture-btn">📸 스크린샷 찍기</button>
-</div>
-<script type="module">
-    import { Stats } from "./assets/stats.js";
-    import { AlvaAR } from './assets/alva_ar.js';
-    import { ARCamView } from "./assets/view.js";
-    import { Camera, onFrame, resize2cover } from "./assets/utils.js";
 
-    function main()
-    {
-        const config = {
-            video: {
-                facingMode: 'environment',
-                aspectRatio: 16 / 9,
-                width: { ideal: 1280 }
-            },
-            audio: false
+<div id="ar-container">
+    <video id="camera-feed" autoplay playsinline muted></video>
+    <canvas id="three-canvas"></canvas>
+    <div id="status">상태: 대기 중</div>
+    <div id="ui-layer">
+        <button id="play-btn">▶️ 이펙트 재생</button>
+        <button id="capture-btn">📸 스크린샷</button>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // 1. 변수 선언
+    // ==========================================
+    const cameraVideo = document.getElementById('camera-feed');
+    const canvas3D = document.getElementById('three-canvas');
+    const captureBtn = document.getElementById('capture-btn');
+    const playBtn = document.getElementById('play-btn');
+    const statusEl = document.getElementById('status');
+
+    let renderer, scene, camera;
+    // [변경] cube 대신 videoPlane 사용
+    let videoPlane, effectVideo, videoTexture;
+
+    // ==========================================
+    // 2. 카메라 실행
+    // ==========================================
+    async function startCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+                audio: false
+            });
+            cameraVideo.srcObject = stream;
+            updateStatus('카메라 준비 완료');
+        } catch (err) {
+            updateStatus('카메라 오류: ' + err.message);
+            console.error("Camera Error:", err);
         }
-
-        const $container = document.getElementById( 'container' );
-        const $view = document.createElement( 'div' );
-        const $canvas = document.createElement( 'canvas' );
-        const $overlay = document.getElementById( 'overlay' );
-        const $start = document.getElementById( 'start_button' );
-        const $splash = document.getElementById( 'splash' );
-        const splashFadeTime = 800;
-
-        $splash.style.transition = `opacity ${ splashFadeTime / 1000 }s ease`;
-        $splash.style.opacity = 0;
-
-        async function demo( media )
-        {
-            const $video = media.el;
-
-            const size = resize2cover( $video.videoWidth, $video.videoHeight, $container.clientWidth, $container.clientHeight );
-
-            $canvas.width = $container.clientWidth;
-            $canvas.height = $container.clientHeight;
-            $video.style.width = size.width + 'px';
-            $video.style.height = size.height + 'px';
-
-            const ctx = $canvas.getContext( '2d', { alpha: false, desynchronized: true } );
-            const alva = await AlvaAR.Initialize( $canvas.width, $canvas.height );
-            const view = new ARCamView( $view, $canvas.width, $canvas.height );
-
-            Stats.add( 'total' );
-            Stats.add( 'video' );
-            Stats.add( 'slam' );
-
-            $container.appendChild( $canvas );
-            $container.appendChild( $view );
-
-            document.body.appendChild( Stats.el );
-            document.body.addEventListener( "click", () => alva.reset(), false );
-
-            // Screenshot capture function
-            function takeScreenshot(event) {
-                // Prevent event from bubbling to body (which triggers alva.reset())
-                event.stopPropagation();
-
-                const captureCanvas = document.createElement('canvas');
-                const width = $container.clientWidth;
-                const height = $container.clientHeight;
-
-                captureCanvas.width = width;
-                captureCanvas.height = height;
-                const captureCtx = captureCanvas.getContext('2d');
-
-                // Draw the main canvas (camera feed + AR points)
-                captureCtx.drawImage($canvas, 0, 0, width, height);
-
-                // Draw the 3D view canvas if it exists
-                const viewCanvas = $view.querySelector('canvas');
-                if (viewCanvas) {
-                    captureCtx.drawImage(viewCanvas, 0, 0, width, height);
-                }
-
-                // Download the image
-                const dataURL = captureCanvas.toDataURL('image/png');
-                const link = document.createElement('a');
-                link.download = `ar-capture-${Date.now()}.png`;
-                link.href = dataURL;
-                link.click();
-            }
-
-            // Connect screenshot button
-            const $captureBtn = document.getElementById('capture-btn');
-            if ($captureBtn) {
-                $captureBtn.addEventListener('click', takeScreenshot);
-            }
-
-            onFrame( () =>
-            {
-                Stats.next();
-                Stats.start( 'total' );
-
-                ctx.clearRect( 0, 0, $canvas.width, $canvas.height );
-
-                if( !document['hidden'] )
-                {
-                    Stats.start( 'video' );
-                    ctx.drawImage( $video, 0, 0, $video.videoWidth, $video.videoHeight, size.x, size.y, size.width, size.height );
-                    const frame = ctx.getImageData( 0, 0, $canvas.width, $canvas.height );
-                    Stats.stop( 'video' );
-
-                    Stats.start( 'slam' );
-                    const pose = alva.findCameraPose( frame );
-                    Stats.stop( 'slam' );
-
-                    if( pose )
-                    {
-                        view.updateCameraPose( pose );
-                    }
-                    else
-                    {
-                        view.lostCamera();
-
-                        const dots = alva.getFramePoints();
-
-                        for( const p of dots )
-                        {
-                            ctx.fillStyle = 'white';
-                            ctx.fillRect( p.x, p.y, 2, 2 );
-                        }
-                    }
-                }
-
-                Stats.stop( 'total' );
-                Stats.render();
-
-                return true;
-            }, 30 );
-        }
-
-        setTimeout( () =>
-        {
-            $splash.remove();
-
-            $start.addEventListener( 'click', () =>
-            {
-                $overlay.remove();
-
-                Camera.Initialize( config ).then( media => demo( media ) ).catch( error => alert( 'Camera ' + error ) );
-
-            }, { once: true } );
-
-        }, splashFadeTime );
     }
 
-    window.addEventListener( 'load', main );
+    // ==========================================
+    // 3. [핵심] 이펙트 비디오 엘리먼트 동적 생성
+    // ==========================================
+    function createEffectVideo() {
+        // HTML에 직접 넣지 않고 JS로 동적 생성
+        effectVideo = document.createElement('video');
+
+        // [필수] CORS 설정 (외부 리소스 사용 시)
+        effectVideo.crossOrigin = 'anonymous';
+
+        // [필수] 브라우저 자동재생 정책 대응
+        effectVideo.muted = true;
+        effectVideo.loop = true;
+        effectVideo.playsInline = true;
+
+        // 비디오 경로 설정 (placeholder)
+        effectVideo.src = './assets/effect.webm';
+
+        // 비디오 로드 완료 이벤트
+        effectVideo.addEventListener('loadeddata', () => {
+            updateStatus('이펙트 비디오 로드 완료');
+            // 텍스처 업데이트 필요 알림
+            if (videoTexture) videoTexture.needsUpdate = true;
+        });
+
+        effectVideo.addEventListener('error', (e) => {
+            updateStatus('비디오 로드 실패 - 데모 패턴 표시');
+            console.warn('Video load error, using fallback');
+            createFallbackTexture();
+        });
+
+        // 비디오 로드 시작
+        effectVideo.load();
+
+        return effectVideo;
+    }
+
+    // [보조] 비디오 로드 실패 시 대체 텍스처
+    function createFallbackTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        // 체커보드 패턴 (반투명)
+        for (let y = 0; y < 8; y++) {
+            for (let x = 0; x < 8; x++) {
+                ctx.fillStyle = (x + y) % 2 === 0 ? 'rgba(255,71,87,0.8)' : 'rgba(46,213,115,0.8)';
+                ctx.fillRect(x * 32, y * 32, 32, 32);
+            }
+        }
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('VIDEO', 128, 128);
+
+        const fallbackTexture = new THREE.CanvasTexture(canvas);
+        if (videoPlane) {
+            videoPlane.material.map = fallbackTexture;
+            videoPlane.material.needsUpdate = true;
+        }
+    }
+
+    // ==========================================
+    // 4. Three.js 3D 환경 설정
+    // ==========================================
+    function initThreeJS() {
+        scene = new THREE.Scene();
+
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 5;
+
+        renderer = new THREE.WebGLRenderer({
+            canvas: canvas3D,
+            alpha: true,
+            preserveDrawingBuffer: true // [유지] 스크린샷 캡처용
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+
+        // [변경] 이펙트 비디오 생성 및 VideoTexture 적용
+        const video = createEffectVideo();
+
+        // THREE.VideoTexture 생성
+        videoTexture = new THREE.VideoTexture(video);
+        videoTexture.minFilter = THREE.LinearFilter;
+        videoTexture.magFilter = THREE.LinearFilter;
+        videoTexture.format = THREE.RGBAFormat; // [핵심] 알파 채널 지원
+
+        // [변경] PlaneGeometry로 비디오 표시
+        const geometry = new THREE.PlaneGeometry(2, 2);
+
+        // [핵심] 알파 채널 투명 처리를 위한 MeshBasicMaterial 설정
+        const material = new THREE.MeshBasicMaterial({
+            map: videoTexture,
+            transparent: true,        // [필수] 투명도 활성화
+            side: THREE.DoubleSide,   // [필수] 양면 렌더링
+            alphaTest: 0.1            // 알파값 임계치 (선택)
+        });
+
+        videoPlane = new THREE.Mesh(geometry, material);
+        videoPlane.position.set(0, 0, 2); // z=2 위치 (카메라 앞)
+        scene.add(videoPlane);
+
+        animate();
+    }
+
+    // 렌더링 루프
+    function animate() {
+        requestAnimationFrame(animate);
+
+        // [선택] Plane에 부드러운 회전 애니메이션 적용
+        if (videoPlane) {
+            videoPlane.rotation.y = Math.sin(Date.now() * 0.001) * 0.3;
+        }
+
+        // VideoTexture 자동 업데이트 (재생 중일 때)
+        if (videoTexture && effectVideo && !effectVideo.paused) {
+            videoTexture.needsUpdate = true;
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    // 윈도우 리사이즈 대응
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ==========================================
+    // 5. 비디오 재생 제어 (브라우저 정책 대응)
+    // ==========================================
+    async function playEffectVideo() {
+        if (!effectVideo) return;
+
+        try {
+            // [핵심] play()는 Promise 반환 - 에러 핸들링 필수
+            await effectVideo.play();
+            updateStatus('이펙트 재생 중 ▶️');
+            playBtn.textContent = '⏸️ 일시정지';
+        } catch (err) {
+            // 자동재생 차단 시 사용자 인터랙션 필요
+            updateStatus('재생 실패: ' + err.message);
+            console.error('Play error:', err);
+        }
+    }
+
+    function toggleEffectVideo() {
+        if (!effectVideo) return;
+
+        if (effectVideo.paused) {
+            playEffectVideo();
+        } else {
+            effectVideo.pause();
+            updateStatus('이펙트 일시정지 ⏸️');
+            playBtn.textContent = '▶️ 이펙트 재생';
+        }
+    }
+
+    // ==========================================
+    // 6. 스크린샷 캡처 (기존 로직 유지)
+    // ==========================================
+    function takeScreenshot() {
+        // 캡처 전 비디오 재생 시도 (첫 클릭 시 재생 활성화)
+        if (effectVideo && effectVideo.paused) {
+            playEffectVideo();
+        }
+
+        const captureCanvas = document.createElement('canvas');
+        const width = window.innerWidth * window.devicePixelRatio;
+        const height = window.innerHeight * window.devicePixelRatio;
+
+        captureCanvas.width = width;
+        captureCanvas.height = height;
+        const ctx = captureCanvas.getContext('2d');
+
+        // 카메라 비디오 그리기
+        drawVideoCover(ctx, cameraVideo, width, height);
+
+        // [호환성 유지] WebGL Canvas 그리기 (VideoTexture 포함)
+        ctx.drawImage(canvas3D, 0, 0, width, height);
+
+        // 다운로드
+        const dataURL = captureCanvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `ar-capture-${Date.now()}.png`;
+        link.href = dataURL;
+        link.click();
+
+        updateStatus('스크린샷 저장됨! 📸');
+    }
+
+    function drawVideoCover(ctx, videoEl, targetW, targetH) {
+        const vidW = videoEl.videoWidth || targetW;
+        const vidH = videoEl.videoHeight || targetH;
+        const targetRatio = targetW / targetH;
+        const vidRatio = vidW / vidH;
+        let sx, sy, sW, sH;
+
+        if (vidRatio > targetRatio) {
+            sH = vidH;
+            sW = vidH * targetRatio;
+            sx = (vidW - sW) / 2;
+            sy = 0;
+        } else {
+            sW = vidW;
+            sH = vidW / targetRatio;
+            sx = 0;
+            sy = (vidH - sH) / 2;
+        }
+        ctx.drawImage(videoEl, sx, sy, sW, sH, 0, 0, targetW, targetH);
+    }
+
+    function updateStatus(msg) {
+        statusEl.textContent = '상태: ' + msg;
+    }
+
+    // ==========================================
+    // 7. 실행 시작
+    // ==========================================
+    initThreeJS();
+    startCamera();
+
+    playBtn.addEventListener('click', toggleEffectVideo);
+    captureBtn.addEventListener('click', takeScreenshot);
 </script>
 </body>
 </html>
