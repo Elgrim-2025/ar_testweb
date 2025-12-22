@@ -4,7 +4,7 @@
     <meta charset="utf-8"/>
     <meta content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,shrink-to-fit=no" name="viewport"/>
     <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
-    <title>AlvaAR Camera</title>
+    <title>AlvaAR - 3D Video Anchor</title>
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgo=">
     <style>
         * {
@@ -13,8 +13,7 @@
             box-sizing: border-box;
         }
 
-        html,
-        body {
+        html, body {
             font-family: 'Helvetica', sans-serif;
             overflow: hidden;
             background: #000;
@@ -43,7 +42,6 @@
             left: 0;
             width: 100%;
             height: 100%;
-            animation: fadeIn 1.2s;
         }
 
         canvas {
@@ -83,12 +81,12 @@
             background: rgba(0, 0, 0, 0.5);
         }
 
-        #overlay::before{
+        #overlay::before {
             position: absolute;
             width: 100%;
             white-space: pre-wrap;
             content: "Please allow access \A to your camera.";
-            top:calc(50% + 50px);
+            top: calc(50% + 50px);
             text-align: center;
             color: #949494;
         }
@@ -103,111 +101,155 @@
             cursor: pointer;
         }
 
-
-
-        @keyframes fadeIn {
-            0% {
-                opacity: 0;
-            }
-            50% {
-                opacity: 0.6;
-            }
-            100% {
-                opacity: 1;
-            }
-        }
-
-        @media screen and (max-device-width: 480px) and (orientation: landscape) {
-            #container {
-                display: none;
-            }
-
-            body::before {
-                content: "Rotate device to portrait mode.";
-                color: white;
-            }
-        }
-
-        @media screen and (max-device-width: 480px) and (orientation: portrait) {
-            #container {
-                display: block;
-            }
-
-            body::before {
-                content: none;
-            }
-        }
-
-        /* AR Object Styles */
-        .ar-object {
+        /* 상태 표시 UI */
+        #status {
             position: absolute;
-            width: 60px;
-            height: 60px;
-            background: radial-gradient(circle, #00ff88, #00cc66);
-            border: 3px solid rgba(255, 255, 255, 0.8);
-            border-radius: 50%;
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
-            transform: translate(-50%, -50%);
-            z-index: 5;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 10;
             pointer-events: none;
-            transition: all 0.3s ease;
         }
 
-        .ar-object.floating {
-            animation: arFloat 3s ease-in-out infinite, arPulse 2s ease-in-out infinite;
-        }
-
-        .ar-object.anchored {
-            animation: none;
-            background: radial-gradient(circle, #ff6b6b, #ff4757);
-            box-shadow: 0 0 15px rgba(255, 107, 107, 0.8);
-        }
-
-        @keyframes arFloat {
-            0%, 100% {
-                transform: translate(-50%, -50%) translateY(0px);
-            }
-            50% {
-                transform: translate(-50%, -50%) translateY(-10px);
-            }
-        }
-
-        @keyframes arPulse {
-            0%, 100% {
-                box-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
-            }
-            50% {
-                box-shadow: 0 0 30px rgba(0, 255, 136, 1);
-            }
-        }
-
-        /* Long Press Indicator */
-        .long-press-indicator {
+        #instruction {
             position: absolute;
-            width: 80px;
-            height: 80px;
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 4;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 16px;
+            z-index: 10;
+            text-align: center;
             pointer-events: none;
-            opacity: 0;
             transition: opacity 0.3s;
         }
 
-        .long-press-indicator.active {
-            opacity: 1;
-            animation: pressProgress 1s linear;
+        /* 플로팅 비디오 미리보기 (화면 중앙) */
+        .floating-preview {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px;
+            height: 150px;
+            border: 3px solid rgba(0, 255, 136, 0.8);
+            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.5);
+            z-index: 5;
+            pointer-events: none;
+            overflow: hidden;
+            animation: floatPreview 2s ease-in-out infinite;
         }
 
-        @keyframes pressProgress {
-            from {
-                border-color: rgba(255, 255, 255, 0.3);
-                transform: translate(-50%, -50%) scale(1);
-            }
-            to {
-                border-color: rgba(255, 255, 255, 1);
-                transform: translate(-50%, -50%) scale(0.8);
+        .floating-preview video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        @keyframes floatPreview {
+            0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+            50% { transform: translate(-50%, -50%) translateY(-10px); }
+        }
+
+        /* 고정된 AR 비디오 오브젝트 */
+        .ar-video-object {
+            position: absolute;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 5;
+            pointer-events: none;
+            box-shadow: 0 0 20px rgba(255, 100, 100, 0.6);
+            transform-origin: center center;
+        }
+
+        .ar-video-object video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* 롱프레스 진행 표시 */
+        .press-progress {
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            transform: translate(-50%, -50%);
+            z-index: 6;
+            pointer-events: none;
+        }
+
+        .press-progress svg {
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
+        }
+
+        .press-progress circle {
+            fill: none;
+            stroke-width: 4;
+        }
+
+        .press-progress .bg {
+            stroke: rgba(255, 255, 255, 0.2);
+        }
+
+        .press-progress .progress {
+            stroke: rgba(0, 255, 136, 1);
+            stroke-dasharray: 283;
+            stroke-dashoffset: 283;
+            transition: stroke-dashoffset 0.05s linear;
+        }
+
+        /* 십자선 (배치 위치 표시) */
+        .crosshair {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .crosshair::before,
+        .crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        .crosshair::before {
+            left: 50%;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            transform: translateX(-50%);
+        }
+
+        .crosshair::after {
+            top: 50%;
+            left: 0;
+            height: 2px;
+            width: 100%;
+            transform: translateY(-50%);
+        }
+
+        @media screen and (max-device-width: 480px) and (orientation: landscape) {
+            #container { display: none; }
+            body::before {
+                content: "Rotate device to portrait mode.";
+                color: white;
             }
         }
     </style>
@@ -226,8 +268,7 @@
     import { ARCamView } from "./assets/view.js";
     import { Camera, onFrame, resize2cover } from "./assets/utils.js";
 
-    function main()
-    {
+    function main() {
         const config = {
             video: {
                 facingMode: 'environment',
@@ -235,299 +276,482 @@
                 width: { ideal: 1280 }
             },
             audio: false
-        }
+        };
 
-        const $container = document.getElementById( 'container' );
-        const $view = document.createElement( 'div' );
-        const $canvas = document.createElement( 'canvas' );
-        const $overlay = document.getElementById( 'overlay' );
-        const $start = document.getElementById( 'start_button' );
-        const $splash = document.getElementById( 'splash' );
+        const $container = document.getElementById('container');
+        const $view = document.createElement('div');
+        const $canvas = document.createElement('canvas');
+        const $overlay = document.getElementById('overlay');
+        const $start = document.getElementById('start_button');
+        const $splash = document.getElementById('splash');
         const splashFadeTime = 800;
 
-        $splash.style.transition = `opacity ${ splashFadeTime / 1000 }s ease`;
+        $splash.style.transition = `opacity ${splashFadeTime / 1000}s ease`;
         $splash.style.opacity = 0;
 
-        async function demo( media )
-        {
+        async function demo(media) {
             const $video = media.el;
 
-            const size = resize2cover( $video.videoWidth, $video.videoHeight, $container.clientWidth, $container.clientHeight );
+            const size = resize2cover($video.videoWidth, $video.videoHeight, $container.clientWidth, $container.clientHeight);
 
             $canvas.width = $container.clientWidth;
             $canvas.height = $container.clientHeight;
             $video.style.width = size.width + 'px';
             $video.style.height = size.height + 'px';
 
-            const ctx = $canvas.getContext( '2d', { alpha: false, desynchronized: true } );
-            const alva = await AlvaAR.Initialize( $canvas.width, $canvas.height );
-            const view = new ARCamView( $view, $canvas.width, $canvas.height );
+            const ctx = $canvas.getContext('2d', { alpha: false, desynchronized: true });
+            const alva = await AlvaAR.Initialize($canvas.width, $canvas.height);
+            const view = new ARCamView($view, $canvas.width, $canvas.height);
 
-            Stats.add( 'total' );
-            Stats.add( 'video' );
-            Stats.add( 'slam' );
+            Stats.add('total');
+            Stats.add('video');
+            Stats.add('slam');
 
-            $container.appendChild( $canvas );
-            $container.appendChild( $view );
+            $container.appendChild($canvas);
+            $container.appendChild($view);
+            document.body.appendChild(Stats.el);
 
-            document.body.appendChild( Stats.el );
+            // ========================================
+            // AR 시스템 상태 관리
+            // ========================================
+            const STATE = {
+                WAITING_TRACKING: 0,   // 트래킹 대기 중
+                READY_TO_SPAWN: 1,     // 터치하면 비디오 생성
+                FLOATING: 2,           // 비디오가 떠있음 (꾹 눌러서 배치)
+                ANCHORED: 3            // 배치 완료
+            };
 
-            // AR World Anchoring System
-            let anchoredObjects = [];
-            let floatingObject = null;
-            let currentPose = null;
+            let currentState = STATE.WAITING_TRACKING;
+            let floatingPreview = null;      // 플로팅 미리보기 컨테이너
+            let anchoredObjects = [];        // 고정된 AR 오브젝트 배열
+            let currentPose = null;          // 현재 카메라 포즈
+            let isTracking = false;          // 트래킹 상태
+
+            // 롱프레스 관련
             let longPressTimer = null;
-            let longPressActive = false;
-            let initialPose = null;
+            let longPressStartTime = 0;
+            let pressProgress = null;
+            let pressAnimationId = null;
+            const LONG_PRESS_DURATION = 1000; // 1초
 
-            // Create floating AR object
-            function createFloatingObject() {
-                if (floatingObject) return;
+            // ========================================
+            // UI 요소 생성
+            // ========================================
 
-                floatingObject = document.createElement('div');
-                floatingObject.className = 'ar-object floating';
-                floatingObject.style.left = '50%';
-                floatingObject.style.top = '50%';
-                $container.appendChild(floatingObject);
+            // 상태 표시
+            const $status = document.createElement('div');
+            $status.id = 'status';
+            $status.textContent = 'Initializing...';
+            $container.appendChild($status);
+
+            // 안내 메시지
+            const $instruction = document.createElement('div');
+            $instruction.id = 'instruction';
+            $instruction.textContent = 'Move camera slowly to start tracking';
+            $container.appendChild($instruction);
+
+            // 십자선
+            const $crosshair = document.createElement('div');
+            $crosshair.className = 'crosshair';
+            $crosshair.style.display = 'none';
+            $container.appendChild($crosshair);
+
+            function updateUI() {
+                switch (currentState) {
+                    case STATE.WAITING_TRACKING:
+                        $status.textContent = 'Tracking...';
+                        $instruction.textContent = 'Move camera slowly to start tracking';
+                        $instruction.style.opacity = '1';
+                        $crosshair.style.display = 'none';
+                        break;
+                    case STATE.READY_TO_SPAWN:
+                        $status.textContent = 'Ready';
+                        $instruction.textContent = 'Tap screen to create video';
+                        $instruction.style.opacity = '1';
+                        $crosshair.style.display = 'block';
+                        break;
+                    case STATE.FLOATING:
+                        $status.textContent = 'Video Active';
+                        $instruction.textContent = 'Long press to anchor video';
+                        $instruction.style.opacity = '1';
+                        $crosshair.style.display = 'block';
+                        break;
+                    case STATE.ANCHORED:
+                        $status.textContent = `Anchored: ${anchoredObjects.length}`;
+                        $instruction.textContent = 'Tap to add another video';
+                        $instruction.style.opacity = '1';
+                        $crosshair.style.display = 'block';
+                        break;
+                }
             }
 
-            // Simple matrix operations for 3D transformation
-            function multiplyMatrixVector(matrix, vector) {
-                return [
-                    matrix[0] * vector[0] + matrix[1] * vector[1] + matrix[2] * vector[2] + matrix[3],
-                    matrix[4] * vector[0] + matrix[5] * vector[1] + matrix[6] * vector[2] + matrix[7],
-                    matrix[8] * vector[0] + matrix[9] * vector[1] + matrix[10] * vector[2] + matrix[11]
-                ];
+            // ========================================
+            // 비디오 생성 (데모용 - 실제로는 원하는 비디오 사용)
+            // ========================================
+            function createVideoElement() {
+                const video = document.createElement('video');
+                video.src = 'https://www.w3schools.com/html/mov_bbb.mp4'; // 데모 비디오
+                video.loop = true;
+                video.muted = true;
+                video.playsInline = true;
+                video.autoplay = true;
+                video.play().catch(() => {});
+                return video;
             }
 
-            // Convert 3D world position to screen coordinates
+            // ========================================
+            // 플로팅 미리보기 생성
+            // ========================================
+            function createFloatingPreview() {
+                if (floatingPreview) return;
+
+                floatingPreview = document.createElement('div');
+                floatingPreview.className = 'floating-preview';
+
+                const video = createVideoElement();
+                floatingPreview.appendChild(video);
+
+                $container.appendChild(floatingPreview);
+                currentState = STATE.FLOATING;
+                updateUI();
+            }
+
+            // ========================================
+            // 3D 월드 좌표계 변환
+            // ========================================
+
+            // 카메라 앞 특정 거리에 월드 좌표 계산
+            function getWorldPositionInFront(pose, distance) {
+                // AlvaAR의 pose는 카메라의 위치와 회전 정보를 담고 있음
+                // position: [x, y, z], rotation: [rx, ry, rz]
+
+                const pos = pose.position;
+                const rot = pose.rotation;
+
+                // 카메라가 바라보는 방향 벡터 계산
+                // rotation[1]은 Y축 회전 (좌우), rotation[0]은 X축 회전 (상하)
+                const forwardX = Math.sin(rot[1]) * Math.cos(rot[0]);
+                const forwardY = -Math.sin(rot[0]);
+                const forwardZ = Math.cos(rot[1]) * Math.cos(rot[0]);
+
+                return {
+                    x: pos[0] + forwardX * distance,
+                    y: pos[1] + forwardY * distance,
+                    z: pos[2] + forwardZ * distance,
+                    // 배치 시점의 카메라 방향도 저장 (나중에 오브젝트 회전에 사용)
+                    rotationY: rot[1]
+                };
+            }
+
+            // 월드 좌표를 화면 좌표로 변환
             function worldToScreen(worldPos, cameraPose) {
-                if (!cameraPose || !initialPose) return null;
+                if (!cameraPose) return null;
 
-                // Calculate relative position from initial camera position
-                const relativePos = [
-                    worldPos.x - initialPose.position[0],
-                    worldPos.y - initialPose.position[1],
-                    worldPos.z - initialPose.position[2]
-                ];
+                const camPos = cameraPose.position;
+                const camRot = cameraPose.rotation;
 
-                // Transform to current camera space
-                const currentRelativePos = [
-                    relativePos[0] + (initialPose.position[0] - cameraPose.position[0]),
-                    relativePos[1] + (initialPose.position[1] - cameraPose.position[1]),
-                    relativePos[2] + (initialPose.position[2] - cameraPose.position[2])
-                ];
+                // 월드 좌표를 카메라 기준 상대 좌표로 변환
+                let dx = worldPos.x - camPos[0];
+                let dy = worldPos.y - camPos[1];
+                let dz = worldPos.z - camPos[2];
 
-                // Simple perspective projection
-                const focal = 600;
-                const cx = $canvas.width / 2;
-                const cy = $canvas.height / 2;
+                // 카메라 Y축 회전 적용 (좌우 회전)
+                const cosY = Math.cos(-camRot[1]);
+                const sinY = Math.sin(-camRot[1]);
+                const rotatedX = dx * cosY - dz * sinY;
+                const rotatedZ = dx * sinY + dz * cosY;
 
-                if (currentRelativePos[2] <= 0.1) return null; // Behind camera
+                // 카메라 X축 회전 적용 (상하 회전)
+                const cosX = Math.cos(-camRot[0]);
+                const sinX = Math.sin(-camRot[0]);
+                const rotatedY = dy * cosX - rotatedZ * sinX;
+                const finalZ = dy * sinX + rotatedZ * cosX;
 
-                const screenX = cx + (focal * currentRelativePos[0] / currentRelativePos[2]);
-                const screenY = cy - (focal * currentRelativePos[1] / currentRelativePos[2]); // Flip Y
-                const distance = Math.sqrt(
-                    currentRelativePos[0] * currentRelativePos[0] +
-                    currentRelativePos[1] * currentRelativePos[1] +
-                    currentRelativePos[2] * currentRelativePos[2]
+                // 카메라 뒤에 있으면 null 반환
+                if (finalZ <= 0.1) return null;
+
+                // 원근 투영
+                const focalLength = 600; // 초점 거리 (조정 가능)
+                const screenX = $canvas.width / 2 + (focalLength * rotatedX / finalZ);
+                const screenY = $canvas.height / 2 - (focalLength * rotatedY / finalZ);
+
+                // 거리 계산
+                const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                // 화면 범위 체크
+                const margin = 200;
+                const isVisible = (
+                    screenX >= -margin &&
+                    screenX <= $canvas.width + margin &&
+                    screenY >= -margin &&
+                    screenY <= $canvas.height + margin
                 );
 
-                return { x: screenX, y: screenY, distance: distance };
+                return {
+                    x: screenX,
+                    y: screenY,
+                    distance: distance,
+                    isVisible: isVisible,
+                    depth: finalZ
+                };
             }
 
-            // Anchor object at current position (3D space)
-            function anchorObject() {
-                if (!currentPose || !floatingObject) return;
+            // ========================================
+            // 오브젝트 배치 (앵커링)
+            // ========================================
+            function anchorCurrentObject() {
+                if (!currentPose || !floatingPreview) return;
 
-                // Set initial reference pose if not set
-                if (!initialPose) {
-                    initialPose = JSON.parse(JSON.stringify(currentPose));
-                }
+                // 카메라 앞 2미터 지점에 월드 좌표 설정
+                const worldPosition = getWorldPositionInFront(currentPose, 2.0);
 
-                // Calculate world position (2 units in front of camera)
-                const depth = 2.0;
-                const forward = [
-                    Math.sin(currentPose.rotation[1]) * Math.cos(currentPose.rotation[0]),
-                    -Math.sin(currentPose.rotation[0]),
-                    Math.cos(currentPose.rotation[1]) * Math.cos(currentPose.rotation[0])
-                ];
+                // AR 오브젝트 생성
+                const arObject = document.createElement('div');
+                arObject.className = 'ar-video-object';
 
-                const worldPos = {
-                    x: currentPose.position[0] + forward[0] * depth,
-                    y: currentPose.position[1] + forward[1] * depth,
-                    z: currentPose.position[2] + forward[2] * depth
+                const video = createVideoElement();
+                arObject.appendChild(video);
+
+                // 기본 크기 설정
+                const baseWidth = 200;
+                const baseHeight = 150;
+                arObject.style.width = baseWidth + 'px';
+                arObject.style.height = baseHeight + 'px';
+
+                $container.appendChild(arObject);
+
+                // 앵커 데이터 저장
+                const anchorData = {
+                    element: arObject,
+                    worldPosition: worldPosition,
+                    baseWidth: baseWidth,
+                    baseHeight: baseHeight,
+                    placementDistance: 2.0 // 배치 시점 거리
                 };
 
-                // Create anchored object
-                const anchoredObj = {
-                    id: 'anchored-' + Date.now(),
-                    worldPosition: worldPos,
-                    element: floatingObject
-                };
+                anchoredObjects.push(anchorData);
 
-                floatingObject.className = 'ar-object anchored';
-                anchoredObjects.push(anchoredObj);
-                floatingObject = null;
+                // 플로팅 미리보기 제거
+                floatingPreview.remove();
+                floatingPreview = null;
 
-                // Create new floating object after a delay
-                setTimeout(() => createFloatingObject(), 500);
+                currentState = STATE.ANCHORED;
+                updateUI();
+
+                console.log('Object anchored at:', worldPosition);
             }
 
-            // Update anchored objects positions based on camera movement
+            // ========================================
+            // 앵커된 오브젝트들 업데이트
+            // ========================================
             function updateAnchoredObjects() {
-                if (!currentPose || anchoredObjects.length === 0) return;
+                if (!currentPose) return;
 
-                anchoredObjects.forEach(obj => {
+                anchoredObjects.forEach((obj, index) => {
                     const screenPos = worldToScreen(obj.worldPosition, currentPose);
 
-                    if (screenPos &&
-                        screenPos.x >= -100 && screenPos.x <= $canvas.width + 100 &&
-                        screenPos.y >= -100 && screenPos.y <= $canvas.height + 100) {
+                    if (screenPos && screenPos.isVisible) {
+                        // 거리에 따른 크기 조절 (원근감)
+                        // 배치 시점 거리 기준으로 스케일 계산
+                        const scale = obj.placementDistance / screenPos.distance;
+                        const clampedScale = Math.max(0.2, Math.min(3.0, scale));
 
-                        // Calculate size based on distance (perspective)
-                        const baseSize = 60;
-                        const scale = Math.max(0.2, Math.min(3.0, 2.0 / screenPos.distance));
-                        const size = baseSize * scale;
+                        const width = obj.baseWidth * clampedScale;
+                        const height = obj.baseHeight * clampedScale;
 
-                        obj.element.style.left = screenPos.x + 'px';
-                        obj.element.style.top = screenPos.y + 'px';
-                        obj.element.style.width = size + 'px';
-                        obj.element.style.height = size + 'px';
+                        // 위치 및 크기 적용
+                        obj.element.style.left = (screenPos.x - width / 2) + 'px';
+                        obj.element.style.top = (screenPos.y - height / 2) + 'px';
+                        obj.element.style.width = width + 'px';
+                        obj.element.style.height = height + 'px';
                         obj.element.style.display = 'block';
-                        obj.element.style.opacity = Math.max(0.3, Math.min(1.0, 3.0 / screenPos.distance));
+
+                        // 거리에 따른 투명도 (먼 거리에서 약간 투명)
+                        const opacity = Math.max(0.5, Math.min(1.0, 2.0 / screenPos.distance));
+                        obj.element.style.opacity = opacity;
+
+                        // z-index 조정 (가까운 것이 위에)
+                        obj.element.style.zIndex = Math.floor(1000 - screenPos.distance * 100);
+
                     } else {
-                        // Hide object when out of view
+                        // 화면 밖이거나 카메라 뒤에 있으면 숨김
                         obj.element.style.display = 'none';
                     }
                 });
             }
 
-            // Long press handling
-            let pressIndicator = null;
+            // ========================================
+            // 롱프레스 처리
+            // ========================================
+            function createPressIndicator(x, y) {
+                pressProgress = document.createElement('div');
+                pressProgress.className = 'press-progress';
+                pressProgress.style.left = x + 'px';
+                pressProgress.style.top = y + 'px';
+                pressProgress.innerHTML = `
+                    <svg viewBox="0 0 100 100">
+                        <circle class="bg" cx="50" cy="50" r="45"/>
+                        <circle class="progress" cx="50" cy="50" r="45"/>
+                    </svg>
+                `;
+                $container.appendChild(pressProgress);
+            }
+
+            function updatePressProgress() {
+                if (!pressProgress || !longPressStartTime) return;
+
+                const elapsed = Date.now() - longPressStartTime;
+                const progress = Math.min(1, elapsed / LONG_PRESS_DURATION);
+
+                // SVG 원형 프로그레스 업데이트
+                const circle = pressProgress.querySelector('.progress');
+                if (circle) {
+                    const circumference = 283; // 2 * PI * 45
+                    circle.style.strokeDashoffset = circumference * (1 - progress);
+                }
+
+                if (progress >= 1) {
+                    // 롱프레스 완료 - 배치
+                    anchorCurrentObject();
+                    endLongPress();
+                } else {
+                    pressAnimationId = requestAnimationFrame(updatePressProgress);
+                }
+            }
 
             function startLongPress(x, y) {
-                if (longPressActive || !floatingObject) return;
+                if (currentState !== STATE.FLOATING || !floatingPreview) return;
 
-                longPressActive = true;
-
-                // Create press indicator
-                pressIndicator = document.createElement('div');
-                pressIndicator.className = 'long-press-indicator active';
-                pressIndicator.style.left = x + 'px';
-                pressIndicator.style.top = y + 'px';
-                $container.appendChild(pressIndicator);
-
-                longPressTimer = setTimeout(() => {
-                    anchorObject();
-                    endLongPress();
-                }, 1000);
+                longPressStartTime = Date.now();
+                createPressIndicator(x, y);
+                pressAnimationId = requestAnimationFrame(updatePressProgress);
             }
 
             function endLongPress() {
-                longPressActive = false;
-                if (longPressTimer) {
-                    clearTimeout(longPressTimer);
-                    longPressTimer = null;
+                longPressStartTime = 0;
+                if (pressAnimationId) {
+                    cancelAnimationFrame(pressAnimationId);
+                    pressAnimationId = null;
                 }
-                if (pressIndicator) {
-                    pressIndicator.remove();
-                    pressIndicator = null;
+                if (pressProgress) {
+                    pressProgress.remove();
+                    pressProgress = null;
                 }
             }
 
-            // Touch/Mouse event handlers
+            // ========================================
+            // 터치/클릭 이벤트
+            // ========================================
+            function handleTouchStart(x, y) {
+                if (!isTracking) return;
+
+                if (currentState === STATE.READY_TO_SPAWN || currentState === STATE.ANCHORED) {
+                    // 비디오 생성
+                    createFloatingPreview();
+                } else if (currentState === STATE.FLOATING) {
+                    // 롱프레스 시작
+                    startLongPress(x, y);
+                }
+            }
+
+            function handleTouchEnd() {
+                endLongPress();
+            }
+
+            // 마우스 이벤트
             $container.addEventListener('mousedown', (e) => {
                 const rect = $container.getBoundingClientRect();
-                startLongPress(e.clientX - rect.left, e.clientY - rect.top);
+                handleTouchStart(e.clientX - rect.left, e.clientY - rect.top);
             });
+            $container.addEventListener('mouseup', handleTouchEnd);
+            $container.addEventListener('mouseleave', handleTouchEnd);
 
-            $container.addEventListener('mouseup', endLongPress);
-            $container.addEventListener('mouseleave', endLongPress);
-
+            // 터치 이벤트
             $container.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 const rect = $container.getBoundingClientRect();
                 const touch = e.touches[0];
-                startLongPress(touch.clientX - rect.left, touch.clientY - rect.top);
+                handleTouchStart(touch.clientX - rect.left, touch.clientY - rect.top);
             });
-
             $container.addEventListener('touchend', (e) => {
                 e.preventDefault();
-                endLongPress();
+                handleTouchEnd();
             });
+            $container.addEventListener('touchcancel', handleTouchEnd);
 
-            $container.addEventListener('touchcancel', endLongPress);
-
-            onFrame( () =>
-            {
+            // ========================================
+            // 메인 렌더링 루프
+            // ========================================
+            onFrame(() => {
                 Stats.next();
-                Stats.start( 'total' );
+                Stats.start('total');
 
-                ctx.clearRect( 0, 0, $canvas.width, $canvas.height );
+                ctx.clearRect(0, 0, $canvas.width, $canvas.height);
 
-                if( !document['hidden'] )
-                {
-                    Stats.start( 'video' );
-                    ctx.drawImage( $video, 0, 0, $video.videoWidth, $video.videoHeight, size.x, size.y, size.width, size.height );
-                    const frame = ctx.getImageData( 0, 0, $canvas.width, $canvas.height );
-                    Stats.stop( 'video' );
+                if (!document['hidden']) {
+                    Stats.start('video');
+                    ctx.drawImage($video, 0, 0, $video.videoWidth, $video.videoHeight, size.x, size.y, size.width, size.height);
+                    const frame = ctx.getImageData(0, 0, $canvas.width, $canvas.height);
+                    Stats.stop('video');
 
-                    Stats.start( 'slam' );
-                    const pose = alva.findCameraPose( frame );
-                    Stats.stop( 'slam' );
+                    Stats.start('slam');
+                    const pose = alva.findCameraPose(frame);
+                    Stats.stop('slam');
 
-                    if( pose )
-                    {
-                        view.updateCameraPose( pose );
+                    if (pose) {
+                        view.updateCameraPose(pose);
                         currentPose = pose;
+                        isTracking = true;
 
-                        // Create floating object when AR tracking starts
-                        if (!floatingObject && anchoredObjects.length === 0) {
-                            createFloatingObject();
+                        // 트래킹 시작 시 상태 전환
+                        if (currentState === STATE.WAITING_TRACKING) {
+                            currentState = STATE.READY_TO_SPAWN;
+                            updateUI();
                         }
 
-                        // Update anchored objects with 3D positioning
+                        // 앵커된 오브젝트들 위치 업데이트
                         updateAnchoredObjects();
-                    }
-                    else
-                    {
+
+                    } else {
                         view.lostCamera();
-                        currentPose = null;
+                        isTracking = false;
 
+                        // 트래킹 포인트 표시
                         const dots = alva.getFramePoints();
-
-                        for( const p of dots )
-                        {
-                            ctx.fillStyle = 'white';
-                            ctx.fillRect( p.x, p.y, 2, 2 );
+                        for (const p of dots) {
+                            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                            ctx.fillRect(p.x, p.y, 3, 3);
                         }
+
+                        // 트래킹 잃음 상태 표시
+                        $status.textContent = 'Tracking lost...';
                     }
                 }
 
-                Stats.stop( 'total' );
+                Stats.stop('total');
                 Stats.render();
 
                 return true;
-            }, 30 );
+            }, 30);
+
+            // 초기 UI 업데이트
+            updateUI();
         }
 
-        setTimeout( () =>
-        {
+        setTimeout(() => {
             $splash.remove();
 
-            $start.addEventListener( 'click', () =>
-            {
+            $start.addEventListener('click', () => {
                 $overlay.remove();
+                Camera.Initialize(config)
+                    .then(media => demo(media))
+                    .catch(error => alert('Camera ' + error));
+            }, { once: true });
 
-                Camera.Initialize( config ).then( media => demo( media ) ).catch( error => alert( 'Camera ' + error ) );
-
-            }, { once: true } );
-
-        }, splashFadeTime );
+        }, splashFadeTime);
     }
 
-    window.addEventListener( 'load', main );
+    window.addEventListener('load', main);
 </script>
 </body>
 </html>
