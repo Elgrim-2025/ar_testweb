@@ -191,72 +191,11 @@
         #capture-btn:active {
             transform: scale(0.95);
         }
-
-        /* Fixed AR Object UI */
-        #fixed-object-controls {
-            position: absolute;
-            top: 70px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 10px;
-            z-index: 100;
-        }
-
-        #fixed-object-controls button {
-            background: rgba(255, 165, 0, 0.8);
-            border: 1px solid rgba(255, 165, 0, 1);
-            border-radius: 4px;
-            color: #ffffff;
-            padding: 10px 15px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        #fixed-object-controls button:hover {
-            background: rgba(255, 165, 0, 1);
-        }
-
-        #fixed-object-controls button.active {
-            background: rgba(255, 50, 50, 0.8);
-            border-color: rgba(255, 50, 50, 1);
-        }
-
-        .fixed-ar-object {
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            background: radial-gradient(circle, #ff6b6b, #ff4757);
-            border: 2px solid white;
-            border-radius: 50%;
-            box-shadow: 0 0 10px rgba(255, 107, 107, 0.8);
-            transform: translate(-50%, -50%);
-            z-index: 5;
-            pointer-events: none;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% {
-                box-shadow: 0 0 10px rgba(255, 107, 107, 0.8);
-            }
-            50% {
-                box-shadow: 0 0 20px rgba(255, 107, 107, 1);
-            }
-            100% {
-                box-shadow: 0 0 10px rgba(255, 107, 107, 0.8);
-            }
-        }
     </style>
 </head>
 <body>
 <div class="nav-buttons">
     <button onclick="location.href='test_1.html'">test_1</button>
-</div>
-<div id="fixed-object-controls">
-    <button id="place-object-btn">객체 배치 모드</button>
-    <button id="clear-objects-btn">모든 객체 제거</button>
 </div>
 <div id="container"></div>
 <div id="overlay">
@@ -317,62 +256,7 @@
             $container.appendChild( $view );
 
             document.body.appendChild( Stats.el );
-
-            // Fixed AR Objects Management
-            let fixedObjects = [];
-            let isPlacementMode = false;
-            const $placeObjectBtn = document.getElementById('place-object-btn');
-            const $clearObjectsBtn = document.getElementById('clear-objects-btn');
-
-            function togglePlacementMode() {
-                isPlacementMode = !isPlacementMode;
-                $placeObjectBtn.classList.toggle('active', isPlacementMode);
-                $placeObjectBtn.textContent = isPlacementMode ? '배치 모드 종료' : '객체 배치 모드';
-            }
-
-            function placeFixedObject(x, y) {
-                const objectId = 'fixed-obj-' + Date.now();
-                const $fixedObject = document.createElement('div');
-                $fixedObject.className = 'fixed-ar-object';
-                $fixedObject.id = objectId;
-                $fixedObject.style.left = x + 'px';
-                $fixedObject.style.top = y + 'px';
-
-                $container.appendChild($fixedObject);
-                fixedObjects.push({ id: objectId, x: x, y: y, element: $fixedObject });
-            }
-
-            function clearAllFixedObjects() {
-                fixedObjects.forEach(obj => {
-                    if (obj.element && obj.element.parentNode) {
-                        obj.element.parentNode.removeChild(obj.element);
-                    }
-                });
-                fixedObjects = [];
-            }
-
-            // Event listeners for fixed object controls
-            $placeObjectBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                togglePlacementMode();
-            });
-
-            $clearObjectsBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                clearAllFixedObjects();
-            });
-
-            // Container click handler for placing objects or resetting AR
-            $container.addEventListener('click', (e) => {
-                if (isPlacementMode) {
-                    const rect = $container.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    placeFixedObject(x, y);
-                } else {
-                    alva.reset();
-                }
-            });
+            document.body.addEventListener( "click", () => alva.reset(), false );
 
             // Screenshot capture function
             function takeScreenshot(event) {
