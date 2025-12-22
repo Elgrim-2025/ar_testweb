@@ -86,14 +86,14 @@ class ARCamView {
         this.object.visible = false;
 
         // 터치 컨트롤 설정값 (외부에서 조정 가능)
-        this.MOVE_SENSITIVITY = 0.01;  // 이동 감도 (낮을수록 느림)
+        this.MOVE_SENSITIVITY = 0.0017;  // 이동 감도 (낮을수록 느림)
         this.MIN_SCALE = 0.3;          // 핀치 줌 최소 스케일
-        this.MAX_SCALE = 3.0;          // 핀치 줌 최대 스케일
-        this.LONG_PRESS_TIME = 500;    // 롱프레스 시간 (ms)
+        this.MAX_SCALE = 5.0;          // 핀치 줌 최대 스케일
+        this.LONG_PRESS_TIME = 300;    // 롱프레스 시간 (ms)
 
         // 빌보드 설정
         this.billboardEnabled = true;  // 빌보드 활성화 여부
-        this.billboardMode = 'cylindrical'; // 'spherical' | 'cylindrical'
+        this.billboardMode = 'spherical'; // 'spherical' | 'cylindrical'
 
         // 빌보드 계산용 벡터 (매 프레임 재생성 방지)
         this._billboardTarget = new THREE.Vector3();
@@ -104,8 +104,8 @@ class ARCamView {
         // ==========================================
         this.minAllowedScale = 0.1;       // 절대 최소 스케일
         this.maxAllowedScale = 10.0;      // 절대 최대 스케일
-        this.minVisibleSize = 50;         // 화면상 최소 픽셀 크기
-        this.distanceScaleEnabled = true; // 거리 기반 스케일 보정 활성화
+        this.minVisibleSize = 100;         // 화면상 최소 픽셀 크기
+        this.distanceScaleEnabled = false; // 거리 기반 스케일 보정 활성화
         this.baseDistance = 10;           // 기준 거리 (이 거리에서 스케일 1.0)
         this.distanceScaleFactor = 0.5;   // 거리 스케일 보정 계수 (0~1, 높을수록 강하게 보정)
 
