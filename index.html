@@ -191,36 +191,6 @@
         #capture-btn:active {
             transform: scale(0.95);
         }
-
-        /* 감도 조절 슬라이더 UI */
-        #sensitivity-control {
-            position: fixed;
-            bottom: 100px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            padding: 15px 20px;
-            border-radius: 10px;
-            z-index: 100;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-        }
-
-        #sensitivity-control label {
-            color: white;
-            font-size: 14px;
-        }
-
-        #sensitivity-control input[type="range"] {
-            width: 150px;
-        }
-
-        #sensitivity-value {
-            color: #4ECDC4;
-            font-weight: bold;
-        }
     </style>
 </head>
 <body>
@@ -235,13 +205,6 @@
 <div id="ui-layer">
     <button id="capture-btn">📸</button>
 </div>
-
-<!-- 감도 조절 UI -->
-<div id="sensitivity-control">
-    <label>Sensitivity: <span id="sensitivity-value">0.1</span></label>
-    <input type="range" id="sensitivity-slider" min="0.02" max="0.5" step="0.02" value="0.1">
-</div>
-
 <script type="module">
     import { Stats } from "./assets/stats.js";
     import { AlvaAR } from './assets/alva_ar.js';
@@ -270,25 +233,6 @@
         $splash.style.transition = `opacity ${ splashFadeTime / 1000 }s ease`;
         $splash.style.opacity = 0;
 
-        // ========================================
-        // 감도 조절 설정
-        // ========================================
-        // 값이 낮을수록 더 부드럽고 느리게 반응
-        // 0.02 = 매우 느림 (부드러움)
-        // 0.1 = 기본값
-        // 0.5 = 빠름 (원본에 가까움)
-        // 1.0 = 스무딩 없음 (원본 그대로)
-        let SMOOTHING_FACTOR = 0.1;
-
-        // 슬라이더 이벤트 연결
-        const $slider = document.getElementById('sensitivity-slider');
-        const $value = document.getElementById('sensitivity-value');
-
-        $slider.addEventListener('input', (e) => {
-            SMOOTHING_FACTOR = parseFloat(e.target.value);
-            $value.textContent = SMOOTHING_FACTOR.toFixed(2);
-        });
-
         async function demo( media )
         {
             const $video = media.el;
@@ -314,62 +258,9 @@
             document.body.appendChild( Stats.el );
             document.body.addEventListener( "click", () => alva.reset(), false );
 
-            // ========================================
-            // 포즈 스무딩 시스템
-            // ========================================
-            let smoothedPose = null;
-
-            // 선형 보간 함수
-            function lerp(a, b, t) {
-                return a + (b - a) * t;
-            }
-
-            // 포즈 스무딩 적용
-            function smoothPose(newPose) {
-                if (!smoothedPose) {
-                    // 첫 번째 포즈는 그대로 사용
-                    smoothedPose = JSON.parse(JSON.stringify(newPose));
-                    return smoothedPose;
-                }
-
-                // position 스무딩
-                if (newPose.position && smoothedPose.position) {
-                    for (let i = 0; i < newPose.position.length; i++) {
-                        smoothedPose.position[i] = lerp(
-                            smoothedPose.position[i],
-                            newPose.position[i],
-                            SMOOTHING_FACTOR
-                        );
-                    }
-                }
-
-                // rotation 스무딩
-                if (newPose.rotation && smoothedPose.rotation) {
-                    for (let i = 0; i < newPose.rotation.length; i++) {
-                        smoothedPose.rotation[i] = lerp(
-                            smoothedPose.rotation[i],
-                            newPose.rotation[i],
-                            SMOOTHING_FACTOR
-                        );
-                    }
-                }
-
-                // matrix 스무딩 (있는 경우)
-                if (newPose.matrix && smoothedPose.matrix) {
-                    for (let i = 0; i < newPose.matrix.length; i++) {
-                        smoothedPose.matrix[i] = lerp(
-                            smoothedPose.matrix[i],
-                            newPose.matrix[i],
-                            SMOOTHING_FACTOR
-                        );
-                    }
-                }
-
-                return smoothedPose;
-            }
-
             // Screenshot capture function
             function takeScreenshot(event) {
+                // Prevent event from bubbling to body (which triggers alva.reset())
                 event.stopPropagation();
 
                 const captureCanvas = document.createElement('canvas');
@@ -380,13 +271,16 @@
                 captureCanvas.height = height;
                 const captureCtx = captureCanvas.getContext('2d');
 
+                // Draw the main canvas (camera feed + AR points)
                 captureCtx.drawImage($canvas, 0, 0, width, height);
 
+                // Draw the 3D view canvas if it exists
                 const viewCanvas = $view.querySelector('canvas');
                 if (viewCanvas) {
                     captureCtx.drawImage(viewCanvas, 0, 0, width, height);
                 }
 
+                // Download the image
                 const dataURL = captureCanvas.toDataURL('image/png');
                 const link = document.createElement('a');
                 link.download = `ar-capture-${Date.now()}.png`;
@@ -394,6 +288,7 @@
                 link.click();
             }
 
+            // Connect screenshot button
             const $captureBtn = document.getElementById('capture-btn');
             if ($captureBtn) {
                 $captureBtn.addEventListener('click', takeScreenshot);
@@ -419,15 +314,11 @@
 
                     if( pose )
                     {
-                        // 스무딩된 포즈 적용
-                        const smoothed = smoothPose(pose);
-                        view.updateCameraPose( smoothed );
+                        view.updateCameraPose( pose );
                     }
                     else
                     {
                         view.lostCamera();
-                        // 트래킹 잃으면 스무딩 리셋
-                        smoothedPose = null;
 
                         const dots = alva.getFramePoints();
 
