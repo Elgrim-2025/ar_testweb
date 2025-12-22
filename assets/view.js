@@ -85,6 +85,12 @@ class ARCamView {
         this.object.position.set(x, y, z);
         this.object.visible = false;
 
+        // 터치 컨트롤 설정값 (외부에서 조정 가능)
+        this.MOVE_SENSITIVITY = 0.0017;  // 이동 감도 (낮을수록 느림)
+        this.MIN_SCALE = 0.3;          // 최소 스케일
+        this.MAX_SCALE = 5.0;          // 최대 스케일
+        this.LONG_PRESS_TIME = 300;    // 롱프레스 시간 (ms)
+
         this.scene = new THREE.Scene();
         this.scene.add(new THREE.AmbientLight(0x808080));
         this.scene.add(new THREE.HemisphereLight(0x404040, 0xf0f0f0, 1));
@@ -134,7 +140,6 @@ class ARCamView {
         let isDrag = false, isPinch = false, isLongPress = false;
         let longTimer = null, selected = null;
         let startPos = { x: 0, y: 0 }, initPinchDist = 0, initScale = 1;
-        const MIN = 0.3, MAX = 3.0, SENS = 0.01;
 
         const ndc = (t) => {
             const r = canvas.getBoundingClientRect();
@@ -153,7 +158,7 @@ class ARCamView {
                 startPos = { x: ts[0].clientX, y: ts[0].clientY };
                 if (hit(ndc(ts[0]))) {
                     selected = this.object;
-                    longTimer = setTimeout(() => { isLongPress = isDrag = true; navigator.vibrate?.(50); }, 500);
+                    longTimer = setTimeout(() => { isLongPress = isDrag = true; navigator.vibrate?.(50); }, this.LONG_PRESS_TIME);
                 }
             }
         }, { passive: false });
@@ -163,11 +168,11 @@ class ARCamView {
             const ts = e.targetTouches;
             if (isPinch && ts.length === 2) {
                 const d = pinchDist(ts);
-                const s = Math.max(MIN, Math.min(MAX, initScale * (d / initPinchDist)));
+                const s = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, initScale * (d / initPinchDist)));
                 this.object.scale.set(s, s, s);
             } else if (isDrag && ts.length === 1 && selected) {
                 const dx = ts[0].clientX - startPos.x, dy = ts[0].clientY - startPos.y;
-                const depth = (this.camera.position.z - selected.position.z) * SENS;
+                const depth = (this.camera.position.z - selected.position.z) * this.MOVE_SENSITIVITY;
                 selected.position.x += dx * depth;
                 selected.position.y -= dy * depth;
                 startPos = { x: ts[0].clientX, y: ts[0].clientY };
@@ -188,14 +193,14 @@ class ARCamView {
         canvas.addEventListener('mousemove', (e) => {
             if (!mouseDown || !selected) return;
             const dx = e.clientX - startPos.x, dy = e.clientY - startPos.y;
-            const depth = (this.camera.position.z - selected.position.z) * SENS;
+            const depth = (this.camera.position.z - selected.position.z) * this.MOVE_SENSITIVITY;
             selected.position.x += dx * depth; selected.position.y -= dy * depth;
             startPos = { x: e.clientX, y: e.clientY };
         });
         canvas.addEventListener('mouseup', () => { mouseDown = false; selected = null; });
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const s = Math.max(MIN, Math.min(MAX, this.object.scale.x * (e.deltaY > 0 ? 0.9 : 1.1)));
+            const s = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, this.object.scale.x * (e.deltaY > 0 ? 0.9 : 1.1)));
             this.object.scale.set(s, s, s);
         }, { passive: false });
     }
