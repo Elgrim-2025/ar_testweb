@@ -100,19 +100,22 @@ void main(void) {
 
     // 터치 제어 변수
     const raycaster = new THREE.Raycaster();
-    const touchPoint = new THREE.Vector2();
-    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0); // Z축 평면
 
     let isDragging = false;
     let isPinching = false;
+    let isLongPressing = false;
+    let longPressTimer = null;
     let selectedObject = null;
-    let dragOffset = new THREE.Vector3();
+    let dragStartPos = { x: 0, y: 0 };
     let initialPinchDistance = 0;
     let initialScale = 1;
 
     // 스케일 제한
-    const MIN_SCALE = 0.5;
-    const MAX_SCALE = 5.0;
+    const MIN_SCALE = 0.3;
+    const MAX_SCALE = 3.0;
+
+    // 이동 감도 (낮을수록 느림)
+    const MOVE_SENSITIVITY = 0.0017;
 
     // ==========================================
     // 3. 카메라 실행
@@ -236,21 +239,13 @@ void main(void) {
     function setupTouchControls() {
         const canvas = canvas3D;
 
-        // 터치 좌표를 정규화된 디바이스 좌표로 변환
+        // 터치 좌표를 NDC로 변환
         function getTouchNDC(touch) {
             const rect = canvas.getBoundingClientRect();
             return new THREE.Vector2(
                 ((touch.clientX - rect.left) / rect.width) * 2 - 1,
                 -((touch.clientY - rect.top) / rect.height) * 2 + 1
             );
-        }
-
-        // 터치 지점을 3D 월드 좌표로 변환
-        function getWorldPosition(ndc) {
-            raycaster.setFromCamera(ndc, camera);
-            const intersectPoint = new THREE.Vector3();
-            raycaster.ray.intersectPlane(plane, intersectPoint);
-            return intersectPoint;
         }
 
         // 두 손가락 사이 거리 계산
@@ -273,26 +268,36 @@ void main(void) {
 
             const touches = e.targetTouches;
 
-            if (touches.length === 1) {
-                // 한 손가락: 드래그 시작
-                const ndc = getTouchNDC(touches[0]);
-                const hit = getIntersectedObject(ndc);
-
-                if (hit) {
-                    isDragging = true;
-                    isPinching = false;
-                    selectedObject = hit.object;
-
-                    // 오프셋 계산 (점프 방지)
-                    const worldPos = getWorldPosition(ndc);
-                    dragOffset.copy(selectedObject.position).sub(worldPos);
-                }
-            } else if (touches.length === 2) {
-                // 두 손가락: 핀치 줌 시작
+            // 두 손가락: 핀치 줌
+            if (touches.length === 2) {
+                clearTimeout(longPressTimer);
+                isLongPressing = false;
                 isDragging = false;
                 isPinching = true;
                 initialPinchDistance = getPinchDistance(touches);
                 initialScale = chromakeyPlane.scale.x;
+                return;
+            }
+
+            // 한 손가락: 롱프레스 후 드래그
+            if (touches.length === 1) {
+                const touch = touches[0];
+                dragStartPos = { x: touch.clientX, y: touch.clientY };
+
+                const ndc = getTouchNDC(touch);
+                const hit = getIntersectedObject(ndc);
+
+                if (hit) {
+                    selectedObject = hit.object;
+
+                    // 롱프레스 타이머 (500ms 후 드래그 모드)
+                    longPressTimer = setTimeout(() => {
+                        isLongPressing = true;
+                        isDragging = true;
+                        console.log('👆 드래그 모드 시작!');
+                        if (navigator.vibrate) navigator.vibrate(50);
+                    }, 500);
+                }
             }
         }, { passive: false });
 
@@ -302,24 +307,41 @@ void main(void) {
 
             const touches = e.targetTouches;
 
-            if (isDragging && touches.length === 1 && selectedObject) {
-                // 드래그 이동
-                const ndc = getTouchNDC(touches[0]);
-                const worldPos = getWorldPosition(ndc);
+            // 핀치 줌 처리
+            if (isPinching && touches.length === 2) {
+                const currentDistance = getPinchDistance(touches);
 
-                // 오프셋 적용하여 자연스러운 이동
-                selectedObject.position.x = worldPos.x + dragOffset.x;
-                selectedObject.position.y = worldPos.y + dragOffset.y;
+                if (initialPinchDistance === 0) {
+                    initialPinchDistance = currentDistance;
+                    return;
+                }
+
+                const scaleFactor = currentDistance / initialPinchDistance;
+                let newScale = initialScale * scaleFactor;
+                newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+
+                chromakeyPlane.scale.set(newScale, newScale, 1);
+                return;
             }
 
-            if (isPinching && touches.length === 2) {
-                // 핀치 줌
-                const currentDistance = getPinchDistance(touches);
-                const scale = initialScale * (currentDistance / initialPinchDistance);
+            // 드래그 이동 처리 (롱프레스 후에만)
+            if (isDragging && touches.length === 1 && selectedObject) {
+                const touch = touches[0];
 
-                // 스케일 제한 적용
-                const clampedScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
-                chromakeyPlane.scale.set(clampedScale, clampedScale, 1);
+                // 화면상 이동량 계산
+                const deltaX = touch.clientX - dragStartPos.x;
+                const deltaY = touch.clientY - dragStartPos.y;
+
+                // 객체의 Z 깊이에 따른 이동 스케일 계산
+                const objectZ = selectedObject.position.z;
+                const depthScale = (camera.position.z - objectZ) * MOVE_SENSITIVITY;
+
+                // 위치 업데이트 (1:1 비율로 자연스럽게)
+                selectedObject.position.x += deltaX * depthScale;
+                selectedObject.position.y -= deltaY * depthScale;
+
+                // 시작점 갱신 (누적 이동)
+                dragStartPos = { x: touch.clientX, y: touch.clientY };
             }
         }, { passive: false });
 
@@ -327,21 +349,25 @@ void main(void) {
         canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
 
+            clearTimeout(longPressTimer);
+
             const touches = e.targetTouches;
 
+            if (touches.length < 2) {
+                initialPinchDistance = 0;
+            }
+
             if (touches.length === 0) {
-                // 모든 손가락 떼면 리셋
+                if (isDragging) console.log('🎯 드래그 종료!');
                 isDragging = false;
                 isPinching = false;
+                isLongPressing = false;
                 selectedObject = null;
-            } else if (touches.length === 1 && isPinching) {
-                // 핀치에서 한 손가락으로 전환
-                isPinching = false;
-                isDragging = false;
+                dragStartPos = { x: 0, y: 0 };
             }
         }, { passive: false });
 
-        // 마우스 지원 (데스크톱 테스트용)
+        // ========== 마우스 지원 (데스크톱) ==========
         let isMouseDown = false;
 
         canvas.addEventListener('mousedown', (e) => {
@@ -353,20 +379,23 @@ void main(void) {
             if (hit) {
                 isMouseDown = true;
                 selectedObject = hit.object;
-                const worldPos = getWorldPosition(ndc);
-                dragOffset.copy(selectedObject.position).sub(worldPos);
+                dragStartPos = { x: e.clientX, y: e.clientY };
             }
         });
 
         canvas.addEventListener('mousemove', (e) => {
             if (!isMouseDown || !selectedObject) return;
-            const ndc = new THREE.Vector2(
-                (e.clientX / window.innerWidth) * 2 - 1,
-                -(e.clientY / window.innerHeight) * 2 + 1
-            );
-            const worldPos = getWorldPosition(ndc);
-            selectedObject.position.x = worldPos.x + dragOffset.x;
-            selectedObject.position.y = worldPos.y + dragOffset.y;
+
+            const deltaX = e.clientX - dragStartPos.x;
+            const deltaY = e.clientY - dragStartPos.y;
+
+            const objectZ = selectedObject.position.z;
+            const depthScale = (camera.position.z - objectZ) * MOVE_SENSITIVITY;
+
+            selectedObject.position.x += deltaX * depthScale;
+            selectedObject.position.y -= deltaY * depthScale;
+
+            dragStartPos = { x: e.clientX, y: e.clientY };
         });
 
         canvas.addEventListener('mouseup', () => {
@@ -374,7 +403,7 @@ void main(void) {
             selectedObject = null;
         });
 
-        // 마우스 휠 줌 (데스크톱)
+        // 마우스 휠 줌
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
             const delta = e.deltaY > 0 ? 0.9 : 1.1;
