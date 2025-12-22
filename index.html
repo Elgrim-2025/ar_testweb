@@ -2,9 +2,10 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR Chromakey</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR Chromakey + Touch</title>
     <style>
+        * { touch-action: none; }
         body { margin: 0; overflow: hidden; background: #000; }
         #ar-container { position: relative; width: 100vw; height: 100vh; }
         #camera-feed {
@@ -15,7 +16,7 @@
         #three-canvas {
             position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
-            z-index: 2; pointer-events: none;
+            z-index: 2;
         }
         #ui-layer {
             position: absolute; bottom: 30px; left: 0;
@@ -27,9 +28,7 @@
             padding: 15px 30px; font-size: 18px; font-weight: bold;
             color: #fff; border: none; border-radius: 50px;
             cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            transition: transform 0.1s;
         }
-        button:active { transform: scale(0.95); }
         #play-btn { background: linear-gradient(135deg, #2ed573, #1e90ff); }
         #capture-btn { background: linear-gradient(135deg, #ff4757, #ff6b81); }
     </style>
@@ -48,11 +47,10 @@
 
 <script>
     // ==========================================
-    // 1. 셰이더 코드 (8th Wall 참조)
+    // 1. 셰이더 코드
     // ==========================================
     const VERTEX_SHADER = `
 varying vec2 vUv;
-
 void main() {
     vUv = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -65,7 +63,6 @@ uniform vec3 keyColor;
 uniform float similarity;
 uniform float smoothness;
 uniform float spill;
-
 varying vec2 vUv;
 
 vec2 RGBtoUV(vec3 rgb) {
@@ -78,15 +75,12 @@ vec2 RGBtoUV(vec3 rgb) {
 vec4 ProcessChromaKey(vec2 texCoord) {
     vec4 rgba = texture2D(tex, texCoord);
     float chromaDist = distance(RGBtoUV(rgba.rgb), RGBtoUV(keyColor));
-
     float baseMask = chromaDist - similarity;
     float fullMask = pow(clamp(baseMask / smoothness, 0.0, 1.0), 1.5);
     rgba.a = fullMask;
-
     float spillVal = pow(clamp(baseMask / spill, 0.0, 1.0), 1.5);
     float desat = clamp(rgba.r * 0.2126 + rgba.g * 0.7152 + rgba.b * 0.0722, 0.0, 1.0);
     rgba.rgb = mix(vec3(desat), rgba.rgb, spillVal);
-
     return rgba;
 }
 
@@ -103,6 +97,22 @@ void main(void) {
 
     let renderer, scene, camera;
     let chromakeyPlane, effectVideo, videoTexture, chromakeyMaterial;
+
+    // 터치 제어 변수
+    const raycaster = new THREE.Raycaster();
+    const touchPoint = new THREE.Vector2();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0); // Z축 평면
+
+    let isDragging = false;
+    let isPinching = false;
+    let selectedObject = null;
+    let dragOffset = new THREE.Vector3();
+    let initialPinchDistance = 0;
+    let initialScale = 1;
+
+    // 스케일 제한
+    const MIN_SCALE = 0.5;
+    const MAX_SCALE = 5.0;
 
     // ==========================================
     // 3. 카메라 실행
@@ -130,14 +140,11 @@ void main(void) {
         effectVideo.autoplay = false;
         effectVideo.setAttribute('playsinline', '');
         effectVideo.src = './assets/greenscreen.mp4';
-
         effectVideo.addEventListener('error', () => createTestPattern());
         effectVideo.load();
-
         return effectVideo;
     }
 
-    // 테스트 패턴
     function createTestPattern() {
         const canvas = document.createElement('canvas');
         canvas.width = 512;
@@ -146,24 +153,20 @@ void main(void) {
         const testTexture = new THREE.CanvasTexture(canvas);
 
         function draw() {
-            ctx.fillStyle = '#00ff00';
+            ctx.fillStyle = '#32A644';
             ctx.fillRect(0, 0, 512, 512);
-
             const t = Date.now() * 0.002;
             ctx.fillStyle = '#ff4757';
             ctx.beginPath();
             ctx.arc(256 + Math.sin(t) * 80, 256 + Math.cos(t * 0.7) * 60, 100, 0, Math.PI * 2);
             ctx.fill();
-
             ctx.fillStyle = '#3742fa';
             ctx.beginPath();
             ctx.arc(256 - Math.sin(t) * 60, 256, 50, 0, Math.PI * 2);
             ctx.fill();
-
             testTexture.needsUpdate = true;
             requestAnimationFrame(draw);
         }
-
         chromakeyMaterial.uniforms.tex.value = testTexture;
         draw();
     }
@@ -184,13 +187,11 @@ void main(void) {
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
 
-        // 비디오 텍스처
         const video = createChromakeyVideo();
         videoTexture = new THREE.VideoTexture(video);
         videoTexture.minFilter = THREE.LinearFilter;
         videoTexture.magFilter = THREE.LinearFilter;
 
-        // ShaderMaterial 크로마키 설정
         chromakeyMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 tex: { value: videoTexture },
@@ -206,12 +207,12 @@ void main(void) {
             depthWrite: false
         });
 
-        // Plane 생성
         const geometry = new THREE.PlaneGeometry(3, 2);
         chromakeyPlane = new THREE.Mesh(geometry, chromakeyMaterial);
         chromakeyPlane.position.set(0, 0, 2);
         scene.add(chromakeyPlane);
 
+        setupTouchControls();
         animate();
     }
 
@@ -230,12 +231,165 @@ void main(void) {
     });
 
     // ==========================================
-    // 6. 비디오 재생
+    // 6. 터치 제어 (핵심)
+    // ==========================================
+    function setupTouchControls() {
+        const canvas = canvas3D;
+
+        // 터치 좌표를 정규화된 디바이스 좌표로 변환
+        function getTouchNDC(touch) {
+            const rect = canvas.getBoundingClientRect();
+            return new THREE.Vector2(
+                ((touch.clientX - rect.left) / rect.width) * 2 - 1,
+                -((touch.clientY - rect.top) / rect.height) * 2 + 1
+            );
+        }
+
+        // 터치 지점을 3D 월드 좌표로 변환
+        function getWorldPosition(ndc) {
+            raycaster.setFromCamera(ndc, camera);
+            const intersectPoint = new THREE.Vector3();
+            raycaster.ray.intersectPlane(plane, intersectPoint);
+            return intersectPoint;
+        }
+
+        // 두 손가락 사이 거리 계산
+        function getPinchDistance(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        // Raycaster로 객체 히트 테스트
+        function getIntersectedObject(ndc) {
+            raycaster.setFromCamera(ndc, camera);
+            const intersects = raycaster.intersectObject(chromakeyPlane);
+            return intersects.length > 0 ? intersects[0] : null;
+        }
+
+        // ========== TOUCH START ==========
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+
+            const touches = e.targetTouches;
+
+            if (touches.length === 1) {
+                // 한 손가락: 드래그 시작
+                const ndc = getTouchNDC(touches[0]);
+                const hit = getIntersectedObject(ndc);
+
+                if (hit) {
+                    isDragging = true;
+                    isPinching = false;
+                    selectedObject = hit.object;
+
+                    // 오프셋 계산 (점프 방지)
+                    const worldPos = getWorldPosition(ndc);
+                    dragOffset.copy(selectedObject.position).sub(worldPos);
+                }
+            } else if (touches.length === 2) {
+                // 두 손가락: 핀치 줌 시작
+                isDragging = false;
+                isPinching = true;
+                initialPinchDistance = getPinchDistance(touches);
+                initialScale = chromakeyPlane.scale.x;
+            }
+        }, { passive: false });
+
+        // ========== TOUCH MOVE ==========
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+
+            const touches = e.targetTouches;
+
+            if (isDragging && touches.length === 1 && selectedObject) {
+                // 드래그 이동
+                const ndc = getTouchNDC(touches[0]);
+                const worldPos = getWorldPosition(ndc);
+
+                // 오프셋 적용하여 자연스러운 이동
+                selectedObject.position.x = worldPos.x + dragOffset.x;
+                selectedObject.position.y = worldPos.y + dragOffset.y;
+            }
+
+            if (isPinching && touches.length === 2) {
+                // 핀치 줌
+                const currentDistance = getPinchDistance(touches);
+                const scale = initialScale * (currentDistance / initialPinchDistance);
+
+                // 스케일 제한 적용
+                const clampedScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+                chromakeyPlane.scale.set(clampedScale, clampedScale, 1);
+            }
+        }, { passive: false });
+
+        // ========== TOUCH END ==========
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+
+            const touches = e.targetTouches;
+
+            if (touches.length === 0) {
+                // 모든 손가락 떼면 리셋
+                isDragging = false;
+                isPinching = false;
+                selectedObject = null;
+            } else if (touches.length === 1 && isPinching) {
+                // 핀치에서 한 손가락으로 전환
+                isPinching = false;
+                isDragging = false;
+            }
+        }, { passive: false });
+
+        // 마우스 지원 (데스크톱 테스트용)
+        let isMouseDown = false;
+
+        canvas.addEventListener('mousedown', (e) => {
+            const ndc = new THREE.Vector2(
+                (e.clientX / window.innerWidth) * 2 - 1,
+                -(e.clientY / window.innerHeight) * 2 + 1
+            );
+            const hit = getIntersectedObject(ndc);
+            if (hit) {
+                isMouseDown = true;
+                selectedObject = hit.object;
+                const worldPos = getWorldPosition(ndc);
+                dragOffset.copy(selectedObject.position).sub(worldPos);
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isMouseDown || !selectedObject) return;
+            const ndc = new THREE.Vector2(
+                (e.clientX / window.innerWidth) * 2 - 1,
+                -(e.clientY / window.innerHeight) * 2 + 1
+            );
+            const worldPos = getWorldPosition(ndc);
+            selectedObject.position.x = worldPos.x + dragOffset.x;
+            selectedObject.position.y = worldPos.y + dragOffset.y;
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isMouseDown = false;
+            selectedObject = null;
+        });
+
+        // 마우스 휠 줌 (데스크톱)
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            const newScale = chromakeyPlane.scale.x * delta;
+            const clampedScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+            chromakeyPlane.scale.set(clampedScale, clampedScale, 1);
+        }, { passive: false });
+    }
+
+    // ==========================================
+    // 7. 비디오 재생
     // ==========================================
     async function toggleVideo() {
         if (!effectVideo) return;
         const btn = document.getElementById('play-btn');
-
         if (effectVideo.paused) {
             try {
                 await effectVideo.play();
@@ -248,7 +402,7 @@ void main(void) {
     }
 
     // ==========================================
-    // 7. 스크린샷
+    // 8. 스크린샷
     // ==========================================
     function takeScreenshot() {
         const w = window.innerWidth * window.devicePixelRatio;
@@ -258,15 +412,12 @@ void main(void) {
         captureCanvas.height = h;
         const ctx = captureCanvas.getContext('2d');
 
-        // 카메라 배경
         const vw = cameraVideo.videoWidth || w, vh = cameraVideo.videoHeight || h;
         const tr = w / h, vr = vw / vh;
         let sx, sy, sw, sh;
         if (vr > tr) { sh = vh; sw = vh * tr; sx = (vw - sw) / 2; sy = 0; }
         else { sw = vw; sh = vw / tr; sx = 0; sy = (vh - sh) / 2; }
         ctx.drawImage(cameraVideo, sx, sy, sw, sh, 0, 0, w, h);
-
-        // 3D 오버레이
         ctx.drawImage(canvas3D, 0, 0, w, h);
 
         const link = document.createElement('a');
@@ -276,7 +427,7 @@ void main(void) {
     }
 
     // ==========================================
-    // 8. 초기화
+    // 9. 초기화
     // ==========================================
     initThreeJS();
     startCamera();
