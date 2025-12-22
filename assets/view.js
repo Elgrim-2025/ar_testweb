@@ -57,14 +57,10 @@ class ARCamView {
 
         this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
         this.camera.rotation.reorder('YXZ');
-        this.camera.updateProjectionMatrix();
 
-        // 크로마키 비디오 설정
+        // 비디오 및 재질 설정 (기존과 동일)
         this.effectVideo = this._createVideo();
         this.videoTexture = new THREE.VideoTexture(this.effectVideo);
-        this.videoTexture.minFilter = THREE.LinearFilter;
-        this.videoTexture.magFilter = THREE.LinearFilter;
-
         this.chromakeyMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 tex: { value: this.videoTexture },
@@ -85,43 +81,74 @@ class ARCamView {
         this.object.position.set(x, y, z);
         this.object.visible = false;
 
-        // 터치 컨트롤 설정값 (외부에서 조정 가능)
-        this.MOVE_SENSITIVITY = 0.0017;  // 이동 감도 (낮을수록 느림)
-        this.MIN_SCALE = 0.3;          // 핀치 줌 최소 스케일
-        this.MAX_SCALE = 5.0;          // 핀치 줌 최대 스케일
-        this.LONG_PRESS_TIME = 300;    // 롱프레스 시간 (ms)
-
-        // 빌보드 설정
-        this.billboardEnabled = true;  // 빌보드 활성화 여부
-        this.billboardMode = 'cylindrical'; // 'spherical' | 'cylindrical'
-
-        // 빌보드 계산용 벡터 (매 프레임 재생성 방지)
+        // 빌보드 및 터치 설정
+        this.billboardEnabled = true;
+        this.billboardMode = 'cylindrical';
         this._billboardTarget = new THREE.Vector3();
-        this._billboardUp = new THREE.Vector3(0, 1, 0);
-
-        // ==========================================
-        // 스케일 제한 및 가시성 보장 설정
-        // ==========================================
-        this.minAllowedScale = 0.1;       // 절대 최소 스케일
-        this.maxAllowedScale = 10.0;      // 절대 최대 스케일
-        this.minVisibleSize = 100;         // 화면상 최소 픽셀 크기
-        this.distanceScaleEnabled = false; // 거리 기반 스케일 보정 활성화
-        this.baseDistance = 10;           // 기준 거리 (이 거리에서 스케일 1.0)
-        this.distanceScaleFactor = 0.5;   // 거리 스케일 보정 계수 (0~1, 높을수록 강하게 보정)
-
-        // 계산용 캐시 벡터
-        this._distanceVec = new THREE.Vector3();
-        this._userScale = scale; // 사용자 설정 스케일 저장
+        this.MOVE_SENSITIVITY = 0.0017;
 
         this.scene = new THREE.Scene();
-        this.scene.add(new THREE.AmbientLight(0x808080));
-        this.scene.add(new THREE.HemisphereLight(0x404040, 0xf0f0f0, 1));
         this.scene.add(this.camera);
         this.scene.add(this.object);
 
         container.appendChild(this.renderer.domElement);
+
         this._setupTouch();
+
+        // [수정] 렌더 루프 바인딩 최적화
+        this._render = this._render.bind(this);
         this._render();
+    }
+
+    // [수정] 렌더 함수: 데이터 업데이트 순서 보정
+    _render() {
+        requestAnimationFrame(this._render);
+
+        if (this.object.visible) {
+            // 1. 카메라 매트릭스 강제 업데이트 (AR 포즈 반영 확인)
+            this.camera.updateMatrixWorld();
+
+            // 2. 빌보드 업데이트
+            if (this.billboardEnabled) {
+                this._updateBillboard();
+            }
+        }
+
+        if (this.effectVideo && !this.effectVideo.paused) {
+            this.videoTexture.needsUpdate = true;
+        }
+
+        this.renderer.render(this.scene, this.camera);
+    }
+
+    _updateBillboard() {
+        if (this.billboardMode === 'spherical') {
+            // [개선] 구형 빌보드: 카메라의 회전값을 그대로 복사하는 것이 AR에서 가장 정확함
+            // lookAt 방식은 오브젝트가 화면 가장자리에 있을 때 뒤틀림이 발생할 수 있음
+            this.object.quaternion.copy(this.camera.quaternion);
+        }
+        else if (this.billboardMode === 'cylindrical') {
+            // 원통형 빌보드: Y축 회전만 추적
+            this._billboardTarget.set(
+                this.camera.position.x,
+                this.object.position.y,
+                this.camera.position.z
+            );
+
+            // 자기 자신의 위치와 타겟 위치가 너무 가까우면 lookAt 에러 방지
+            if (this.object.position.distanceToSquared(this._billboardTarget) > 0.0001) {
+                this.object.lookAt(this._billboardTarget);
+            }
+        }
+    }
+
+    // AR 엔진으로부터 포즈를 전달받는 함수
+    updateCameraPose(pose) {
+        if (pose) {
+            this.applyPose(pose, this.camera.quaternion, this.camera.position);
+            this.object.visible = true;
+            if (this.effectVideo?.paused) this.playVideo();
+        }
     }
 
     _createVideo() {
@@ -381,109 +408,32 @@ class ARCamView {
 // ==========================================
 // ARCamIMUView (기존 유지)
 // ==========================================
-class ARCamView {
-    constructor(container, width, height, x = 0, y = 0, z = -10, scale = 1.0) {
+class ARCamIMUView {
+    constructor(container, width, height) {
         this.applyPose = AlvaARConnectorTHREE.Initialize(THREE);
-
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
         this.renderer.setClearColor(0, 0);
         this.renderer.setSize(width, height);
         this.renderer.setPixelRatio(window.devicePixelRatio);
-
-        this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-        this.camera.rotation.reorder('YXZ');
-
-        // 비디오 및 재질 설정 (기존과 동일)
-        this.effectVideo = this._createVideo();
-        this.videoTexture = new THREE.VideoTexture(this.effectVideo);
-        this.chromakeyMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                tex: { value: this.videoTexture },
-                keyColor: { value: new THREE.Color(0x32A644) },
-                similarity: { value: 0.095 },
-                smoothness: { value: 0.082 },
-                spill: { value: 0.214 }
-            },
-            vertexShader: CHROMA_VERTEX,
-            fragmentShader: CHROMA_FRAGMENT,
-            transparent: true,
-            side: THREE.DoubleSide,
-            depthWrite: false
-        });
-
-        this.object = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), this.chromakeyMaterial);
-        this.object.scale.set(scale, scale, scale);
-        this.object.position.set(x, y, z);
-        this.object.visible = false;
-
-        // 빌보드 및 터치 설정
-        this.billboardEnabled = true;
-        this.billboardMode = 'cylindrical';
-        this._billboardTarget = new THREE.Vector3();
-        this.MOVE_SENSITIVITY = 0.0017;
-
+        this.camera = new THREE.PerspectiveCamera(60, width / height, 0.01, 1000);
+        this.raycaster = new THREE.Raycaster();
+        this.ground = new THREE.Mesh(new THREE.CircleGeometry(1000, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthTest: true, opacity: 0.1, side: THREE.DoubleSide }));
+        this.ground.rotation.x = Math.PI / 2;
+        this.ground.position.y = -10;
         this.scene = new THREE.Scene();
+        this.scene.add(new THREE.AmbientLight(0x808080));
+        this.scene.add(new THREE.HemisphereLight(0x404040, 0xf0f0f0, 1));
+        this.scene.add(this.ground);
         this.scene.add(this.camera);
-        this.scene.add(this.object);
-
         container.appendChild(this.renderer.domElement);
-
-        this._setupTouch();
-
-        // [수정] 렌더 루프 바인딩 최적화
-        this._render = this._render.bind(this);
-        this._render();
+        const render = () => { requestAnimationFrame(render); this.renderer.render(this.scene, this.camera); };
+        render();
     }
-
-    // [수정] 렌더 함수: 데이터 업데이트 순서 보정
-    _render() {
-        requestAnimationFrame(this._render);
-
-        if (this.object.visible) {
-            // 1. 카메라 매트릭스 강제 업데이트 (AR 포즈 반영 확인)
-            this.camera.updateMatrixWorld();
-
-            // 2. 빌보드 업데이트
-            if (this.billboardEnabled) {
-                this._updateBillboard();
-            }
-        }
-
-        if (this.effectVideo && !this.effectVideo.paused) {
-            this.videoTexture.needsUpdate = true;
-        }
-
-        this.renderer.render(this.scene, this.camera);
-    }
-
-    _updateBillboard() {
-        if (this.billboardMode === 'spherical') {
-            // [개선] 구형 빌보드: 카메라의 회전값을 그대로 복사하는 것이 AR에서 가장 정확함
-            // lookAt 방식은 오브젝트가 화면 가장자리에 있을 때 뒤틀림이 발생할 수 있음
-            this.object.quaternion.copy(this.camera.quaternion);
-        }
-        else if (this.billboardMode === 'cylindrical') {
-            // 원통형 빌보드: Y축 회전만 추적
-            this._billboardTarget.set(
-                this.camera.position.x,
-                this.object.position.y,
-                this.camera.position.z
-            );
-
-            // 자기 자신의 위치와 타겟 위치가 너무 가까우면 lookAt 에러 방지
-            if (this.object.position.distanceToSquared(this._billboardTarget) > 0.0001) {
-                this.object.lookAt(this._billboardTarget);
-            }
-        }
-    }
-
-    // AR 엔진으로부터 포즈를 전달받는 함수
     updateCameraPose(pose) {
-        if (pose) {
-            this.applyPose(pose, this.camera.quaternion, this.camera.position);
-            this.object.visible = true;
-            if (this.effectVideo?.paused) this.playVideo();
-        }
+        this.applyPose(pose, this.camera.quaternion, this.camera.position);
+        this.ground.position.x = this.camera.position.x;
+        this.ground.position.z = this.camera.position.z;
+        this.scene.children.forEach(obj => obj.visible = true);
     }
     lostCamera() { this.scene.children.forEach(obj => obj.visible = false); }
     addObjectAt(x, y, scale = 1.0) {
