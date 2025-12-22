@@ -86,10 +86,18 @@ class ARCamView {
         this.object.visible = false;
 
         // 터치 컨트롤 설정값 (외부에서 조정 가능)
-        this.MOVE_SENSITIVITY = 0.0017;  // 이동 감도 (낮을수록 느림)
+        this.MOVE_SENSITIVITY = 0.01;  // 이동 감도 (낮을수록 느림)
         this.MIN_SCALE = 0.3;          // 최소 스케일
-        this.MAX_SCALE = 5.0;          // 최대 스케일
-        this.LONG_PRESS_TIME = 300;    // 롱프레스 시간 (ms)
+        this.MAX_SCALE = 3.0;          // 최대 스케일
+        this.LONG_PRESS_TIME = 500;    // 롱프레스 시간 (ms)
+
+        // 빌보드 설정
+        this.billboardEnabled = true;  // 빌보드 활성화 여부
+        this.billboardMode = 'cylindrical'; // 'spherical' | 'cylindrical'
+
+        // 빌보드 계산용 벡터 (매 프레임 재생성 방지)
+        this._billboardTarget = new THREE.Vector3();
+        this._billboardUp = new THREE.Vector3(0, 1, 0);
 
         this.scene = new THREE.Scene();
         this.scene.add(new THREE.AmbientLight(0x808080));
@@ -207,8 +215,54 @@ class ARCamView {
 
     _render() {
         requestAnimationFrame(this._render.bind(this));
+
+        // 빌보드 업데이트
+        if (this.billboardEnabled && this.object.visible) {
+            this._updateBillboard();
+        }
+
         if (this.effectVideo && !this.effectVideo.paused) this.videoTexture.needsUpdate = true;
         this.renderer.render(this.scene, this.camera);
+    }
+
+    // ==========================================
+    // 빌보드 기능
+    // ==========================================
+    _updateBillboard() {
+        if (this.billboardMode === 'spherical') {
+            this._sphericalBillboard();
+        } else {
+            this._cylindricalBillboard();
+        }
+    }
+
+    // 구형 빌보드: 모든 축에서 카메라를 완전히 추적
+    _sphericalBillboard() {
+        // 카메라 위치를 바라보도록 설정
+        this._billboardTarget.copy(this.camera.position);
+        this.object.lookAt(this._billboardTarget);
+
+        // PlaneGeometry는 기본적으로 -Z를 향하므로 뒤집힘 보정 불필요
+        // lookAt은 +Z가 타겟을 향하게 하므로 Plane 앞면이 카메라를 향함
+    }
+
+    // 원통형 빌보드: Y축 회전만 (수직 유지, 뒤집힘 방지)
+    _cylindricalBillboard() {
+        // Y축만 회전하도록 타겟의 Y를 오브젝트와 동일하게 설정
+        this._billboardTarget.set(
+            this.camera.position.x,
+            this.object.position.y,  // Y 고정
+            this.camera.position.z
+        );
+        this.object.lookAt(this._billboardTarget);
+    }
+
+    // 빌보드 모드 설정 메서드
+    setBillboardMode(mode) {
+        if (mode === 'spherical' || mode === 'cylindrical' || mode === 'none') {
+            this.billboardMode = mode;
+            this.billboardEnabled = (mode !== 'none');
+        }
     }
 
     playVideo() { this.effectVideo?.play().catch(console.error); }
