@@ -190,14 +190,14 @@ void main(void) {
         videoTexture.minFilter = THREE.LinearFilter;
         videoTexture.magFilter = THREE.LinearFilter;
 
-        // ShaderMaterial (8th Wall 기본값)
+        // ShaderMaterial 크로마키 설정
         chromakeyMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 tex: { value: videoTexture },
-                keyColor: { value: new THREE.Color(0x00ff00) },
-                similarity: { value: 0.01 },
-                smoothness: { value: 0.18 },
-                spill: { value: 0.1 }
+                keyColor: { value: new THREE.Color(0x32A644) },
+                similarity: { value: 0.095 },
+                smoothness: { value: 0.082 },
+                spill: { value: 0.214 }
             },
             vertexShader: VERTEX_SHADER,
             fragmentShader: FRAGMENT_SHADER,
