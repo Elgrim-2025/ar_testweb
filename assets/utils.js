@@ -227,6 +227,9 @@ class Camera
 
         this._canvas = createCanvas( this.width, this.height );
         this._ctx = this._canvas.getContext( '2d', { willReadFrequently: true } );
+
+        // 🔧 최적화: ImageData 버퍼를 미리 할당하여 GC 스파이크 방지
+        this._imageData = this._ctx.createImageData( this.width, this.height );
     }
 
     getImageData()
@@ -234,7 +237,10 @@ class Camera
         this._ctx.clearRect( 0, 0, this.width, this.height );
         this._ctx.drawImage( this.el, 0, 0, this.width, this.height );
 
-        return this._ctx.getImageData( 0, 0, this.width, this.height );
+        // 🔧 최적화: 재사용 가능한 버퍼 사용 (매 프레임 새로운 객체 할당 제거)
+        const tempData = this._ctx.getImageData( 0, 0, this.width, this.height );
+        this._imageData.data.set( tempData.data );
+        return this._imageData;
     }
 }
 
@@ -316,7 +322,9 @@ class Video
         this._ctx = this._canvas.getContext( '2d', { willReadFrequently: true } );
 
         this._lastTime = -1;
-        this._imageData = null;
+        // 🔧 최적화: ImageData 버퍼를 미리 할당하여 GC 스파이크 방지
+        this._imageData = this._ctx.createImageData( this.width, this.height );
+        this._needsUpdate = true;
     }
 
     getImageData()
@@ -326,16 +334,18 @@ class Video
         if( this._lastTime !== t )
         {
             this._lastTime = t;
-
-            this._imageData = null;
+            this._needsUpdate = true;
         }
 
-        if( this._imageData === null )
+        if( this._needsUpdate )
         {
             this._ctx.clearRect( 0, 0, this.width, this.height );
             this._ctx.drawImage( this.el, 0, 0, this.width, this.height );
 
-            this._imageData = this._ctx.getImageData( 0, 0, this.width, this.height );
+            // 🔧 최적화: 재사용 가능한 버퍼 사용
+            const tempData = this._ctx.getImageData( 0, 0, this.width, this.height );
+            this._imageData.data.set( tempData.data );
+            this._needsUpdate = false;
         }
 
         return this._imageData;

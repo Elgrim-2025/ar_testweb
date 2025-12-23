@@ -165,6 +165,8 @@ class IMU
         this.screenOrientationAngle = 0;
 
         this.motion = [];
+        // 🔧 최적화: 모션 데이터 큐 최대 크기 제한 (60Hz * 1초 = 60 샘플)
+        this.MAX_MOTION_SAMPLES = 60;
 
         this.orientation = { x: 1, y: 0, z: 0, w: 1 };
         this.worldTransform = isIOS()
@@ -199,6 +201,12 @@ class IMU
             const timestamp = Date.now();
 
             this.motion.push( { timestamp, gx, gy, gz, ax, ay, az } );
+
+            // 🔧 최적화: 오래된 데이터 제거 (메모리 릭 방지)
+            if( this.motion.length > this.MAX_MOTION_SAMPLES )
+            {
+                this.motion.shift();
+            }
         }
 
         const handleScreenOrientation = ( event ) =>
