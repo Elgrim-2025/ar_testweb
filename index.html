@@ -338,18 +338,7 @@
 
                     if( pose )
                     {
-                        // 🎯 IMU를 통한 카메라 자세 업데이트
-                        if (imu) {
-                            // IMU orientation을 카메라 quaternion에 동기화
-                            view.camera.quaternion.copy(imu.orientation);
-                        }
-
                         view.updateCameraPose( pose );
-
-                        // 🎯 빌보드 효과: chromakey 객체가 항상 카메라를 바라보도록
-                        if (view.object) {
-                            view.object.quaternion.copy(view.camera.quaternion);
-                        }
                     }
                     else
                     {
@@ -367,7 +356,6 @@
 
                 Stats.stop( 'total' );
                 Stats.render();
-
                 return true;
             }, 30 );
         }

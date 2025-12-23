@@ -61,6 +61,7 @@ class ARCamView {
         this.renderer.setClearColor(0, 0);
         this.renderer.setSize(width, height);
         this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.autoClear = false;  // 🔧 수동 clear로 프레임 갱신 안정화
 
         this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
         this.camera.rotation.reorder('YXZ');
@@ -141,6 +142,38 @@ class ARCamView {
         draw();
     }
 
+    /**
+     * 🎯 터치 소환: 빈 곳을 터치하면 카메라 정면 방향으로 개체를 이동
+     */
+    moveObjectToTouch(screenX, screenY) {
+        if (!this.object) return;
+
+        // 방법 1: Raycaster를 사용한 정확한 위치 계산 (옵션)
+        // const rect = this.renderer.domElement.getBoundingClientRect();
+        // const ndcX = ((screenX - rect.left) / rect.width) * 2 - 1;
+        // const ndcY = -((screenY - rect.top) / rect.height) * 2 + 1;
+        // const raycaster = new THREE.Raycaster();
+        // raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
+        // const newPos = raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(5));
+        // this.object.position.copy(newPos);
+
+        // 방법 2: 카메라 정면 방향 벡터로 단순 이동 (더 직관적)
+        const forwardVector = new THREE.Vector3(0, 0, -1);
+        forwardVector.applyQuaternion(this.camera.quaternion);
+        const distance = 5; // 카메라로부터의 거리
+
+        this.object.position.copy(this.camera.position);
+        this.object.position.add(forwardVector.multiplyScalar(distance));
+
+        // 햅틱 피드백
+        if (navigator.vibrate) {
+            navigator.vibrate(30);
+        }
+    }
+
+    /**
+     * 🔧 완전히 재작성된 터치 컨트롤: Camera-Space Drag + 터치 소환 기능
+     */
     _setupTouch() {
         const canvas = this.renderer.domElement;
         const raycaster = new THREE.Raycaster();
@@ -148,24 +181,74 @@ class ARCamView {
         let longTimer = null, selected = null;
         let startPos = { x: 0, y: 0 }, initPinchDist = 0, initScale = 1;
 
-        const ndc = (t) => {
-            const r = canvas.getBoundingClientRect();
-            return new THREE.Vector2(((t.clientX - r.left) / r.width) * 2 - 1, -((t.clientY - r.top) / r.height) * 2 + 1);
+        // NDC (Normalized Device Coordinates) 변환
+        const ndc = (touch) => {
+            const rect = canvas.getBoundingClientRect();
+            return new THREE.Vector2(
+                ((touch.clientX - rect.left) / rect.width) * 2 - 1,
+                -((touch.clientY - rect.top) / rect.height) * 2 + 1
+            );
         };
-        const pinchDist = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
-        const hit = (n) => { raycaster.setFromCamera(n, this.camera); const i = raycaster.intersectObject(this.object); return i.length ? i[0] : null; };
 
+        // 핀치 거리 계산
+        const pinchDist = (touches) => Math.hypot(
+            touches[0].clientX - touches[1].clientX,
+            touches[0].clientY - touches[1].clientY
+        );
+
+        // Raycaster로 개체 선택 확인
+        const hit = (ndcCoord) => {
+            raycaster.setFromCamera(ndcCoord, this.camera);
+            const intersections = raycaster.intersectObject(this.object);
+            return intersections.length ? intersections[0] : null;
+        };
+
+        // 🎯 Camera-Space Drag: 카메라 회전을 고려한 드래그 벡터 투영
+        const applyDrag = (deltaX, deltaY, target) => {
+            // 카메라 공간에서 우측(right)와 상단(up) 방향 벡터 계산
+            const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+            const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+
+            // 화면 공간 delta를 월드 공간 이동으로 변환
+            // 깊이에 따른 스케일 조정
+            const distance = this.camera.position.distanceTo(target.position);
+            const scaleFactor = distance * this.MOVE_SENSITIVITY;
+
+            // 🔧 방향 수정: deltaX는 그대로, deltaY는 반전 (화면 좌표계 → 월드 좌표계)
+            const moveVector = new THREE.Vector3();
+            moveVector.add(cameraRight.multiplyScalar(deltaX * scaleFactor));
+            moveVector.add(cameraUp.multiplyScalar(-deltaY * scaleFactor)); // y축 반전
+
+            target.position.add(moveVector);
+        };
+
+        // ========== 터치 이벤트 ==========
         canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
             const ts = e.targetTouches;
+
             if (ts.length === 2) {
-                clearTimeout(longTimer); isLongPress = isDrag = false; isPinch = true;
-                initPinchDist = pinchDist(ts); initScale = this.object.scale.x;
+                // 핀치 시작
+                clearTimeout(longTimer);
+                isLongPress = isDrag = false;
+                isPinch = true;
+                initPinchDist = pinchDist(ts);
+                initScale = this.object.scale.x;
             } else if (ts.length === 1) {
+                // 단일 터치: 개체 선택 또는 소환
                 startPos = { x: ts[0].clientX, y: ts[0].clientY };
-                if (hit(ndc(ts[0]))) {
+                const hitResult = hit(ndc(ts[0]));
+
+                if (hitResult) {
+                    // 개체를 터치함 → 롱프레스로 드래그 모드 진입
                     selected = this.object;
-                    longTimer = setTimeout(() => { isLongPress = isDrag = true; navigator.vibrate?.(50); }, this.LONG_PRESS_TIME);
+                    longTimer = setTimeout(() => {
+                        isLongPress = isDrag = true;
+                        if (navigator.vibrate) navigator.vibrate(50);
+                    }, this.LONG_PRESS_TIME);
+                } else {
+                    // 🎯 빈 곳을 터치 → 개체 소환
+                    this.moveObjectToTouch(ts[0].clientX, ts[0].clientY);
                 }
             }
         }, { passive: false });
@@ -173,42 +256,93 @@ class ARCamView {
         canvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
             const ts = e.targetTouches;
+
             if (isPinch && ts.length === 2) {
-                const d = pinchDist(ts);
-                const s = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, initScale * (d / initPinchDist)));
-                this.object.scale.set(s, s, s);
+                // 핀치 줌
+                const currentDist = pinchDist(ts);
+                const newScale = Math.max(
+                    this.MIN_SCALE,
+                    Math.min(this.MAX_SCALE, initScale * (currentDist / initPinchDist))
+                );
+                this.object.scale.set(newScale, newScale, newScale);
             } else if (isDrag && ts.length === 1 && selected) {
-                const dx = ts[0].clientX - startPos.x, dy = ts[0].clientY - startPos.y;
-                const depth = (this.camera.position.z - selected.position.z) * this.MOVE_SENSITIVITY;
-                selected.position.x += dx * depth;
-                selected.position.y -= dy * depth;
+                // 🎯 Camera-Space Drag: 카메라 방향 고려한 드래그
+                const deltaX = ts[0].clientX - startPos.x;
+                const deltaY = ts[0].clientY - startPos.y;
+
+                applyDrag(deltaX, deltaY, selected);
+
                 startPos = { x: ts[0].clientX, y: ts[0].clientY };
+            } else if (ts.length === 1 && !isDrag) {
+                // 롱프레스 대기 중 이동 시 타이머 취소
+                if (longTimer) {
+                    const dx = ts[0].clientX - startPos.x;
+                    const dy = ts[0].clientY - startPos.y;
+                    if (Math.hypot(dx, dy) > 10) {
+                        clearTimeout(longTimer);
+                    }
+                }
             }
         }, { passive: false });
 
         canvas.addEventListener('touchend', (e) => {
-            e.preventDefault(); clearTimeout(longTimer);
-            if (e.targetTouches.length === 0) { isDrag = isPinch = isLongPress = false; selected = null; }
+            e.preventDefault();
+            clearTimeout(longTimer);
+
+            if (e.targetTouches.length === 0) {
+                isDrag = isPinch = isLongPress = false;
+                selected = null;
+            }
         }, { passive: false });
 
-        // Mouse support
+        // ========== 마우스 이벤트 (데스크톱 테스트용) ==========
         let mouseDown = false;
+
         canvas.addEventListener('mousedown', (e) => {
-            const n = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-            if (hit(n)) { mouseDown = true; selected = this.object; startPos = { x: e.clientX, y: e.clientY }; }
+            const rect = canvas.getBoundingClientRect();
+            const ndcCoord = new THREE.Vector2(
+                ((e.clientX - rect.left) / rect.width) * 2 - 1,
+                -((e.clientY - rect.top) / rect.height) * 2 + 1
+            );
+
+            const hitResult = hit(ndcCoord);
+
+            if (hitResult) {
+                // 개체 선택 → 드래그 모드
+                mouseDown = true;
+                selected = this.object;
+                startPos = { x: e.clientX, y: e.clientY };
+            } else {
+                // 🎯 빈 곳 클릭 → 개체 소환
+                this.moveObjectToTouch(e.clientX, e.clientY);
+            }
         });
+
         canvas.addEventListener('mousemove', (e) => {
             if (!mouseDown || !selected) return;
-            const dx = e.clientX - startPos.x, dy = e.clientY - startPos.y;
-            const depth = (this.camera.position.z - selected.position.z) * this.MOVE_SENSITIVITY;
-            selected.position.x += dx * depth; selected.position.y -= dy * depth;
+
+            const deltaX = e.clientX - startPos.x;
+            const deltaY = e.clientY - startPos.y;
+
+            // 🎯 Camera-Space Drag
+            applyDrag(deltaX, deltaY, selected);
+
             startPos = { x: e.clientX, y: e.clientY };
         });
-        canvas.addEventListener('mouseup', () => { mouseDown = false; selected = null; });
+
+        canvas.addEventListener('mouseup', () => {
+            mouseDown = false;
+            selected = null;
+        });
+
+        // 마우스 휠 줌
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const s = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, this.object.scale.x * (e.deltaY > 0 ? 0.9 : 1.1)));
-            this.object.scale.set(s, s, s);
+            const newScale = Math.max(
+                this.MIN_SCALE,
+                Math.min(this.MAX_SCALE, this.object.scale.x * (e.deltaY > 0 ? 0.9 : 1.1))
+            );
+            this.object.scale.set(newScale, newScale, newScale);
         }, { passive: false });
     }
 
@@ -221,6 +355,13 @@ class ARCamView {
             this.videoTexture.needsUpdate = true;
         }
 
+        // 🎯 빌보드 효과: chromakey 객체가 항상 카메라를 바라보도록 (공간에 고정된 위치 유지)
+        if (this.object && this.object.visible) {
+            this.object.quaternion.copy(this.camera.quaternion);
+        }
+
+        // 🔧 수동 clear로 프레임 갱신 안정화
+        this.renderer.clear();
         this.renderer.render(this.scene, this.camera);
     }
 
