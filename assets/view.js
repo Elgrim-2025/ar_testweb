@@ -50,7 +50,14 @@ class ARCamView {
     constructor(container, width, height, x = 0, y = 0, z = -10, scale = 1.0) {
         this.applyPose = AlvaARConnectorTHREE.Initialize(THREE);
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+        // 🔧 Chrome 깜빡임 방지: preserveDrawingBuffer를 false로 설정 (성능 향상)
+        // powerPreference로 GPU 성능 고정
+        this.renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true,
+            preserveDrawingBuffer: false,  // 스크린샷 시에만 별도 처리
+            powerPreference: "high-performance"  // GPU 성능 고정
+        });
         this.renderer.setClearColor(0, 0);
         this.renderer.setSize(width, height);
         this.renderer.setPixelRatio(window.devicePixelRatio);
@@ -207,7 +214,13 @@ class ARCamView {
 
     _render() {
         requestAnimationFrame(this._render.bind(this));
-        if (this.effectVideo && !this.effectVideo.paused) this.videoTexture.needsUpdate = true;
+
+        // 🔧 Chrome 깜빡임 방지: readyState 체크로 불필요한 텍스처 업데이트 방지
+        if (this.effectVideo && !this.effectVideo.paused &&
+            this.effectVideo.readyState >= this.effectVideo.HAVE_CURRENT_DATA) {
+            this.videoTexture.needsUpdate = true;
+        }
+
         this.renderer.render(this.scene, this.camera);
     }
 

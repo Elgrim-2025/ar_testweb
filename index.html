@@ -4,7 +4,7 @@
     <meta charset="utf-8"/>
     <meta content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,shrink-to-fit=no" name="viewport"/>
     <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
-    <title>AlvaAR IMU</title>
+    <title>AlvaAR Camera - IMU + Billboard</title>
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgo=">
     <style>
         * {
@@ -44,6 +44,12 @@
             width: 100%;
             height: 100%;
             animation: fadeIn 1.2s;
+
+            /* 🔧 Chrome 깜빡임 방지: 브라우저 컴포지팅 레이어 분리 */
+            will-change: transform;
+            backface-visibility: hidden;
+            -webkit-transform: translateZ(0);
+            transform: translateZ(0);
         }
 
         canvas {
@@ -51,6 +57,12 @@
             position: absolute;
             top: 0;
             left: 0;
+
+            /* 🔧 Chrome 깜빡임 방지: Canvas 레이어 최적화 */
+            will-change: transform;
+            backface-visibility: hidden;
+            -webkit-transform: translateZ(0);
+            transform: translateZ(0);
         }
 
         #container > video {
@@ -83,12 +95,12 @@
             background: rgba(0, 0, 0, 0.5);
         }
 
-        #overlay::before {
+        #overlay::before{
             position: absolute;
             width: 100%;
             white-space: pre-wrap;
-            content: "Please allow access to \A your camera and motion sensor.";
-            top: calc(50% + 50px);
+            content: "Please allow access \A to your camera and motion sensor.";
+            top:calc(50% + 50px);
             text-align: center;
             color: #949494;
         }
@@ -101,6 +113,56 @@
             padding: 12px 18px;
             text-transform: uppercase;
             cursor: pointer;
+        }
+
+        /* Screenshot button UI */
+        #ui-layer {
+            position: absolute;
+            bottom: 30px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #capture-btn {
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            background-color: #ff4757;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+            pointer-events: auto;
+        }
+
+        #capture-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* IMU Status Indicator */
+        #imu-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            border-radius: 20px;
+            font-size: 12px;
+            z-index: 100;
+            display: none;
+        }
+
+        #imu-status.active {
+            display: block;
+            background: rgba(0, 255, 100, 0.3);
+            border: 1px solid rgba(0, 255, 100, 0.6);
         }
 
         @keyframes fadeIn {
@@ -143,12 +205,17 @@
     <button id="start_button">Start</button>
     <div id="splash"></div>
 </div>
+<div id="ui-layer">
+    <button id="capture-btn">📸</button>
+</div>
+<div id="imu-status">IMU Active</div>
+
 <script type="module">
     import { Stats } from "./assets/stats.js";
     import { AlvaAR } from './assets/alva_ar.js';
-    import { ARCamIMUView } from "./assets/view.js";
-    import { IMU } from "./assets/imu.js";
+    import { ARCamView } from "./assets/view.js";
     import { Camera, onFrame, resize2cover } from "./assets/utils.js";
+    import { IMU } from "./assets/imu.js";
 
     function main()
     {
@@ -167,6 +234,7 @@
         const $overlay = document.getElementById( 'overlay' );
         const $start = document.getElementById( 'start_button' );
         const $splash = document.getElementById( 'splash' );
+        const $imuStatus = document.getElementById( 'imu-status' );
         const splashFadeTime = 800;
 
         $splash.style.transition = `opacity ${ splashFadeTime / 1000 }s ease`;
@@ -185,7 +253,7 @@
 
             const ctx = $canvas.getContext( '2d', { alpha: false, desynchronized: true } );
             const alva = await AlvaAR.Initialize( $canvas.width, $canvas.height );
-            const view = new ARCamIMUView( $view, $canvas.width, $canvas.height );
+            const view = new ARCamView( $view, $canvas.width, $canvas.height );
 
             Stats.add( 'total' );
             Stats.add( 'video' );
@@ -195,9 +263,52 @@
             $container.appendChild( $view );
 
             document.body.appendChild( Stats.el );
-            document.body.addEventListener( "click", ( e ) => view.addObjectAt( e.clientX, e.clientY ), false );
-            document.body.addEventListener( "dblclick", ( e ) => alva.reset(), false );
 
+            // IMU 상태 표시
+            if (imu) {
+                $imuStatus.classList.add('active');
+            }
+
+            // 🔧 스크린샷 캡처 함수 (preserveDrawingBuffer: false 대응)
+            function takeScreenshot(event) {
+                event.stopPropagation();
+
+                const captureCanvas = document.createElement('canvas');
+                const width = $container.clientWidth;
+                const height = $container.clientHeight;
+
+                captureCanvas.width = width;
+                captureCanvas.height = height;
+                const captureCtx = captureCanvas.getContext('2d');
+
+                // 1. 카메라 피드 그리기
+                captureCtx.drawImage($canvas, 0, 0, width, height);
+
+                // 2. Three.js 렌더러를 임시로 preserveDrawingBuffer 모드로 한 프레임 렌더링
+                const viewCanvas = $view.querySelector('canvas');
+                if (viewCanvas) {
+                    // Three.js 캔버스를 직접 복사 (이미 렌더링된 상태)
+                    captureCtx.drawImage(viewCanvas, 0, 0, width, height);
+                }
+
+                // 3. 이미지 다운로드
+                const dataURL = captureCanvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.download = `ar-capture-${Date.now()}.png`;
+                link.href = dataURL;
+                link.click();
+            }
+
+            // 스크린샷 버튼 연결
+            const $captureBtn = document.getElementById('capture-btn');
+            if ($captureBtn) {
+                $captureBtn.addEventListener('click', takeScreenshot);
+            }
+
+            // 더블 클릭으로 SLAM 리셋
+            document.body.addEventListener( "dblclick", () => alva.reset(), false );
+
+            // ⭐ 메인 렌더링 루프
             onFrame( () =>
             {
                 Stats.next();
@@ -213,12 +324,32 @@
                     Stats.stop( 'video' );
 
                     Stats.start( 'slam' );
-                    const pose = alva.findCameraPoseWithIMU( frame, imu.orientation, imu.motion );
+
+                    // 🎯 IMU 센서 통합: IMU가 있으면 센서 융합 모드 사용
+                    let pose;
+                    if (imu) {
+                        pose = alva.findCameraPoseWithIMU( frame, imu.orientation, imu.motion );
+                        imu.clear(); // 사용한 모션 데이터 클리어
+                    } else {
+                        pose = alva.findCameraPose( frame );
+                    }
+
                     Stats.stop( 'slam' );
 
                     if( pose )
                     {
+                        // 🎯 IMU를 통한 카메라 자세 업데이트
+                        if (imu) {
+                            // IMU orientation을 카메라 quaternion에 동기화
+                            view.camera.quaternion.copy(imu.orientation);
+                        }
+
                         view.updateCameraPose( pose );
+
+                        // 🎯 빌보드 효과: chromakey 객체가 항상 카메라를 바라보도록
+                        if (view.object) {
+                            view.object.quaternion.copy(view.camera.quaternion);
+                        }
                     }
                     else
                     {
@@ -247,18 +378,29 @@
 
             $start.addEventListener( 'click', async () =>
             {
-                try
-                {
+                try {
                     $overlay.remove();
 
-                    const imu = await IMU.Initialize();
-                    const cam = await Camera.Initialize( config );
+                    // 🎯 IMU 초기화 (권한 요청 포함)
+                    let imu = null;
+                    try {
+                        imu = await IMU.Initialize();
+                        console.log('✅ IMU initialized successfully');
+                    } catch (error) {
+                        console.warn('⚠️ IMU not available:', error);
+                        // IMU 없이도 계속 진행
+                    }
 
-                    await demo( cam, imu );
-                } catch( error )
-                {
+                    // 카메라 초기화
+                    const media = await Camera.Initialize( config );
+
+                    // AR 데모 시작
+                    await demo( media, imu );
+
+                } catch( error ) {
                     alert( 'Error: ' + error );
                 }
+
             }, { once: true } );
 
         }, splashFadeTime );
